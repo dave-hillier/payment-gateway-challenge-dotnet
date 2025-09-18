@@ -87,6 +87,12 @@ public class PaymentsController(
             }
         }
 
+        // Check if payment was rejected due to validation failures
+        if (response.Status == PaymentStatus.Rejected)
+        {
+            return BadRequest(response);
+        }
+
         return Ok(response);
     }
 }
