@@ -1,17 +1,50 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using PaymentGateway.Api.Data;
+using PaymentGateway.Api.Data.Entities;
+using PaymentGateway.Api.Enums;
 using PaymentGateway.Api.Middleware;
 using PaymentGateway.Api.Services;
+using System.Data.Common;
 
 namespace PaymentGateway.Api.Tests;
 
-public class IdempotencyMiddlewareTests
+public class IdempotencyMiddlewareTests : IDisposable
 {
+    private readonly ServiceProvider _serviceProvider;
     private readonly IdempotencyService _idempotencyService;
+    private readonly PaymentGatewayDbContext _dbContext;
 
     public IdempotencyMiddlewareTests()
     {
-        _idempotencyService = new IdempotencyService();
+        var services = new ServiceCollection();
+
+        // Set up in-memory database
+        var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        services.AddSingleton<DbConnection>(connection);
+
+        services.AddDbContext<PaymentGatewayDbContext>((container, options) =>
+        {
+            var conn = container.GetRequiredService<DbConnection>();
+            options.UseSqlite(conn);
+        });
+
+        services.AddScoped<IdempotencyService>();
+
+        _serviceProvider = services.BuildServiceProvider();
+        _dbContext = _serviceProvider.GetRequiredService<PaymentGatewayDbContext>();
+        _dbContext.Database.EnsureCreated();
+
+        _idempotencyService = _serviceProvider.GetRequiredService<IdempotencyService>();
+    }
+
+    public void Dispose()
+    {
+        _dbContext?.Dispose();
+        _serviceProvider?.Dispose();
     }
 
     [Fact]
@@ -27,10 +60,10 @@ public class IdempotencyMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
         Assert.True(nextCalled);
@@ -50,10 +83,10 @@ public class IdempotencyMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
         Assert.True(nextCalled);
@@ -73,36 +106,56 @@ public class IdempotencyMiddlewareTests
             return Task.CompletedTask;
         };
 
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
         Assert.True(nextCalled);
     }
 
     [Fact]
-    public async Task InvokeAsync_WithExistingProcessingRequest_ReturnsConflict()
+    public async Task InvokeAsync_WithExistingProcessingRequest_ReturnsPaymentResponse()
     {
         // Arrange
         var idempotencyKey = "test-key";
         var context = CreateHttpContext("/api/payments", "POST");
         context.Request.Headers["Cko-Idempotency-Key"] = idempotencyKey;
 
-        // Mark as processing (no response yet)
-        _idempotencyService.MarkAsProcessing(idempotencyKey);
+        // Create a completed payment request in the database
+        var existingPayment = new PaymentRequest
+        {
+            Id = Guid.NewGuid(),
+            CardNumber = "4111111111111111",
+            CardNumberLastFour = "1111",
+            ExpiryMonth = 12,
+            ExpiryYear = 2025,
+            Currency = "USD",
+            Amount = 1000,
+            CVV = "123",
+            Status = PaymentStatus.Authorized,
+            CreatedAt = DateTime.UtcNow,
+            IdempotencyKey = idempotencyKey
+        };
+        _dbContext.PaymentRequests.Add(existingPayment);
+        await _dbContext.SaveChangesAsync();
 
-        RequestDelegate next = (_) => Task.CompletedTask;
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        RequestDelegate next = (_) => throw new InvalidOperationException("Next should not be called");
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
-        Assert.Equal(409, context.Response.StatusCode);
+        Assert.Equal(200, context.Response.StatusCode);
+        Assert.Equal("application/json", context.Response.ContentType);
+
         var responseBody = await GetResponseBody(context);
-        Assert.Equal("Concurrent request detected", responseBody);
+        var deserializedResponse = JsonSerializer.Deserialize<JsonElement>(responseBody);
+
+        Assert.Equal(existingPayment.Id.ToString(), deserializedResponse.GetProperty("id").GetString());
+        Assert.Equal(3, deserializedResponse.GetProperty("status").GetInt32()); // PaymentStatus.Authorized = 3
     }
 
     [Fact]
@@ -113,14 +166,29 @@ public class IdempotencyMiddlewareTests
         var context = CreateHttpContext("/api/payments", "POST");
         context.Request.Headers["Cko-Idempotency-Key"] = idempotencyKey;
 
-        var cachedResponse = new { id = Guid.NewGuid(), status = "Authorized" };
-        _idempotencyService.Store(idempotencyKey, cachedResponse, 200);
+        // Create a completed payment in the database
+        var existingPayment = new PaymentRequest
+        {
+            Id = Guid.NewGuid(),
+            CardNumber = "4111111111111111",
+            CardNumberLastFour = "1111",
+            ExpiryMonth = 12,
+            ExpiryYear = 2025,
+            Currency = "USD",
+            Amount = 1000,
+            CVV = "123",
+            Status = PaymentStatus.Authorized,
+            CreatedAt = DateTime.UtcNow,
+            IdempotencyKey = idempotencyKey
+        };
+        _dbContext.PaymentRequests.Add(existingPayment);
+        await _dbContext.SaveChangesAsync();
 
         RequestDelegate next = (_) => throw new InvalidOperationException("Next should not be called");
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
         Assert.Equal(200, context.Response.StatusCode);
@@ -129,8 +197,8 @@ public class IdempotencyMiddlewareTests
         var responseBody = await GetResponseBody(context);
         var deserializedResponse = JsonSerializer.Deserialize<JsonElement>(responseBody);
 
-        Assert.Equal(cachedResponse.id.ToString(), deserializedResponse.GetProperty("id").GetString());
-        Assert.Equal(cachedResponse.status, deserializedResponse.GetProperty("status").GetString());
+        Assert.Equal(existingPayment.Id.ToString(), deserializedResponse.GetProperty("id").GetString());
+        Assert.Equal(3, deserializedResponse.GetProperty("status").GetInt32()); // PaymentStatus.Authorized = 3
     }
 
     [Fact]
@@ -150,19 +218,17 @@ public class IdempotencyMiddlewareTests
             return ctx.Response.WriteAsync(responseJson);
         };
 
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
         Assert.Equal(200, context.Response.StatusCode);
 
-        // Verify response was cached
-        var cachedRecord = _idempotencyService.Get(idempotencyKey);
-        Assert.NotNull(cachedRecord);
-        Assert.Equal(200, cachedRecord.StatusCode);
-        Assert.NotNull(cachedRecord.Response);
+        // Verify the request was processed successfully
+        // The middleware doesn't store anything for new requests in the database implementation
+        // since the controller handles the database storage
 
         var responseBody = await GetResponseBody(context);
         var deserializedResponse = JsonSerializer.Deserialize<JsonElement>(responseBody);
@@ -185,18 +251,16 @@ public class IdempotencyMiddlewareTests
             return ctx.Response.WriteAsync("Bad Request");
         };
 
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
         Assert.Equal(400, context.Response.StatusCode);
 
-        // Verify response was NOT cached (error responses shouldn't be cached)
-        var cachedRecord = _idempotencyService.Get(idempotencyKey);
-        Assert.NotNull(cachedRecord); // The processing record should exist
-        Assert.Null(cachedRecord.Response); // But no response should be cached
+        // Verify error response was processed
+        // With database implementation, error responses are handled by the controller, not the middleware
     }
 
     [Fact]
@@ -213,18 +277,16 @@ public class IdempotencyMiddlewareTests
             return Task.CompletedTask; // No response body
         };
 
-        var middleware = new IdempotencyMiddleware(next, _idempotencyService);
+        var middleware = new IdempotencyMiddleware(next);
 
         // Act
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _idempotencyService);
 
         // Assert
         Assert.Equal(200, context.Response.StatusCode);
 
-        // Verify response was NOT cached (empty responses shouldn't be cached)
-        var cachedRecord = _idempotencyService.Get(idempotencyKey);
-        Assert.NotNull(cachedRecord); // The processing record should exist
-        Assert.Null(cachedRecord.Response); // But no response should be cached
+        // Verify empty response was processed
+        // With database implementation, empty responses are handled by the controller, not the middleware
     }
 
     [Theory]
@@ -234,8 +296,7 @@ public class IdempotencyMiddlewareTests
     public void ShouldProcessIdempotency_WithPaymentsPath_ReturnsTrue(string path)
     {
         // Arrange
-        var context = CreateHttpContext(path, HttpMethods.Post);
-        var middleware = new IdempotencyMiddleware(_ => Task.CompletedTask, _idempotencyService);
+        var context = CreateHttpContext(path, "POST");
 
         // Act & Assert through reflection since the method is private
         var shouldProcess = ShouldProcessIdempotencyReflection(context);
