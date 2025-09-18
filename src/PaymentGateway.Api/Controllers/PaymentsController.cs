@@ -9,22 +9,15 @@ namespace PaymentGateway.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class PaymentsController : Controller
+public class PaymentsController(PaymentsRepository paymentsRepository) : Controller
 {
-    private readonly PaymentsRepository _paymentsRepository;
-
-    public PaymentsController(PaymentsRepository paymentsRepository)
-    {
-        _paymentsRepository = paymentsRepository;
-    }
-
     [HttpGet("{id:guid}")]
     [Produces("application/vnd.paymentgateway.payment+json", "application/json")]
     [ProducesResponseType(typeof(GetPaymentResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<GetPaymentResponse?>> GetPaymentAsync(Guid id)
     {
-        var payment = _paymentsRepository.Get(id);
+        var payment = paymentsRepository.Get(id);
 
         if (payment == null)
         {
@@ -75,7 +68,7 @@ public class PaymentsController : Controller
         };
 
         // Store the payment for retrieval
-        _paymentsRepository.Add(paymentResponse);
+        paymentsRepository.Add(paymentResponse);
 
         return Ok(paymentResponse);
     }

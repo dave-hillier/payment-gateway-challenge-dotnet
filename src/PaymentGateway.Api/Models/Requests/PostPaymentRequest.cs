@@ -2,7 +2,7 @@
 
 namespace PaymentGateway.Api.Models.Requests;
 
-public class PostPaymentRequest
+public record PostPaymentRequest
 {
     [Required]
     [StringLength(19, MinimumLength = 14)]
