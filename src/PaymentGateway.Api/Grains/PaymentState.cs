@@ -17,6 +17,5 @@ public class PaymentState
     [Id(9)] public DateTime CreatedAt { get; set; }
     [Id(10)] public DateTime? ProcessedAt { get; set; }
     [Id(11)] public string? BankResponseCode { get; set; }
-    [Id(12)] public int RetryCount { get; set; }
-    [Id(13)] public string? IdempotencyKey { get; set; }
+    [Id(12)] public string? IdempotencyKey { get; set; }
 }

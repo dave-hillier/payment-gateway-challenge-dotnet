@@ -13,8 +13,6 @@ public class PaymentGrain : Grain, IPaymentGrain
     private readonly ILogger<PaymentGrain> _logger;
     private readonly CardValidationService _cardValidationService;
     private readonly AcquirerRouter _acquirerRouter;
-    private IDisposable? _retryTimer;
-    private string? _currentAcquirerId;
 
     public PaymentGrain(
         [PersistentState("paymentState", "paymentStore")] IPersistentState<PaymentState> state,
@@ -55,7 +53,6 @@ public class PaymentGrain : Grain, IPaymentGrain
         _state.State.Amount = amount;
         _state.State.CVV = cvv;
         _state.State.CreatedAt = DateTime.UtcNow;
-        _state.State.RetryCount = 0;
 
         // Validate payment request
         if (!_cardValidationService.IsValidCardNumber(cardNumber) ||
@@ -109,15 +106,11 @@ public class PaymentGrain : Grain, IPaymentGrain
             _logger.LogInformation("Processing payment {PaymentId} with bank", _state.State.Id);
 
             // Get acquirer grain using grain-based routing
-            var acquirerGrain = _acquirerRouter.GetAcquirerGrain(
-                _state.State.CardNumber,
-                _currentAcquirerId); // Use current acquirer if retrying
-
-            // Store acquirer ID for potential retries
-            _currentAcquirerId = acquirerGrain.GetPrimaryKeyString();
+            var acquirerGrain = _acquirerRouter.GetAcquirerGrain(_state.State.CardNumber);
 
             // Configure the acquirer grain with centralized configuration
-            var config = _acquirerRouter.GetAcquirerConfiguration(_currentAcquirerId);
+            var acquirerId = acquirerGrain.GetPrimaryKeyString();
+            var config = _acquirerRouter.GetAcquirerConfiguration(acquirerId);
             await acquirerGrain.ConfigureAsync(config);
 
             var acquirerRequest = new AcquirerPaymentRequest
@@ -129,7 +122,8 @@ public class PaymentGrain : Grain, IPaymentGrain
                 Cvv = _state.State.CVV
             };
 
-            var bankResponse = await acquirerGrain.ProcessPaymentAsync(acquirerRequest, CancellationToken.None);
+            // Use the retry-capable method from AcquirerGrain
+            var bankResponse = await acquirerGrain.ProcessPaymentWithRetryAsync(acquirerRequest, CancellationToken.None);
 
             _state.State.Status = bankResponse.Authorized switch
             {
@@ -146,62 +140,29 @@ public class PaymentGrain : Grain, IPaymentGrain
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
         {
-            _logger.LogError(ex, "Acquirer {AcquirerId} unavailable for payment {PaymentId}",
-                _currentAcquirerId, _state.State.Id);
+            _logger.LogError(ex, "All acquirers unavailable for payment {PaymentId}", _state.State.Id);
 
-            // Try fallback acquirer (skip for simulator in tests to ensure 503 response)
-            if (!string.IsNullOrEmpty(_currentAcquirerId) &&
-                _state.State.RetryCount < 1 &&
-                _currentAcquirerId != "simulator")
-            {
-                var fallbackGrain = _acquirerRouter.GetFallbackAcquirerGrain(_currentAcquirerId);
-                _currentAcquirerId = fallbackGrain.GetPrimaryKeyString();
-                _logger.LogInformation("Attempting fallback to acquirer {AcquirerId}", _currentAcquirerId);
-                await HandleRetry();
-            }
-            else
-            {
-                _state.State.Status = PaymentStatus.Failed;
-                _state.State.ProcessedAt = DateTime.UtcNow;
-                _state.State.BankResponseCode = "SERVICE_UNAVAILABLE";
-                await _state.WriteStateAsync();
+            _state.State.Status = PaymentStatus.Failed;
+            _state.State.ProcessedAt = DateTime.UtcNow;
+            _state.State.BankResponseCode = "SERVICE_UNAVAILABLE";
+            await _state.WriteStateAsync();
 
-                // Re-throw to signal service unavailable to controller
-                throw new HttpRequestException("All acquirers unavailable", null, System.Net.HttpStatusCode.ServiceUnavailable);
-            }
+            // Re-throw to signal service unavailable to controller
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing payment {PaymentId}", _state.State.Id);
-            await HandleRetry();
-        }
-    }
 
-    private async Task HandleRetry()
-    {
-        _state.State.RetryCount++;
-
-        if (_state.State.RetryCount >= 3)
-        {
             _state.State.Status = PaymentStatus.Failed;
             _state.State.ProcessedAt = DateTime.UtcNow;
-            await _state.WriteStateAsync();
-            _logger.LogWarning("Payment {PaymentId} failed after {RetryCount} retries",
-                _state.State.Id, _state.State.RetryCount);
-        }
-        else
-        {
-            _state.State.Status = PaymentStatus.Validated;
+            _state.State.BankResponseCode = "PROCESSING_ERROR";
             await _state.WriteStateAsync();
 
-            var retryDelay = TimeSpan.FromSeconds(Math.Pow(2, _state.State.RetryCount));
-            _logger.LogInformation("Payment {PaymentId} scheduled for retry #{RetryCount} in {Delay}",
-                _state.State.Id, _state.State.RetryCount, retryDelay);
-
-            // Use Orleans timer for retry
-            _retryTimer = this.RegisterGrainTimer(async () => await ProcessWithBankAsync(), new() { DueTime = retryDelay, Period = TimeSpan.MaxValue, Interleave = true });
+            throw;
         }
     }
+
 
     private PostPaymentResponse CreateResponse()
     {
@@ -217,9 +178,4 @@ public class PaymentGrain : Grain, IPaymentGrain
         };
     }
 
-    public override Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
-    {
-        _retryTimer?.Dispose();
-        return base.OnDeactivateAsync(reason, cancellationToken);
-    }
 }

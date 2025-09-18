@@ -6,6 +6,8 @@ public interface IAcquirerGrain : IGrainWithStringKey
 {
     Task<AcquirerPaymentResponse> ProcessPaymentAsync(AcquirerPaymentRequest request, CancellationToken cancellationToken = default);
 
+    Task<AcquirerPaymentResponse> ProcessPaymentWithRetryAsync(AcquirerPaymentRequest request, CancellationToken cancellationToken = default);
+
     Task<AcquirerHealthStatus> GetHealthStatusAsync();
 
     Task<AcquirerMetrics> GetMetricsAsync();

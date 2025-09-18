@@ -29,6 +29,9 @@ public class AcquirerGrainState
 
     [Id(8)]
     public DateTime MetricsWindowStart { get; set; } = DateTime.UtcNow;
+
+    [Id(9)]
+    public Dictionary<string, int> PaymentRetryCount { get; set; } = new();
 }
 
 [GenerateSerializer]

@@ -14,6 +14,7 @@ public class AcquirerGrain : Grain, IAcquirerGrain
     private readonly ILogger<AcquirerGrain> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly JsonSerializerOptions _jsonOptions;
+    private IDisposable? _retryTimer;
 
     public AcquirerGrain(
         [PersistentState("acquirerState", "acquirerStore")] IPersistentState<AcquirerGrainState> state,
@@ -32,6 +33,26 @@ public class AcquirerGrain : Grain, IAcquirerGrain
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         await base.OnActivateAsync(cancellationToken);
+    }
+
+    public async Task<AcquirerPaymentResponse> ProcessPaymentWithRetryAsync(AcquirerPaymentRequest request, CancellationToken cancellationToken = default)
+    {
+        var paymentKey = $"{request.CardNumber}_{request.Amount}_{request.Currency}";
+
+        // Initialize retry count for this payment if not exists
+        if (!_state.State.PaymentRetryCount.ContainsKey(paymentKey))
+        {
+            _state.State.PaymentRetryCount[paymentKey] = 0;
+        }
+
+        try
+        {
+            return await ProcessPaymentAsync(request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return await HandleRetryAsync(paymentKey, request, ex, cancellationToken);
+        }
     }
 
     public async Task<AcquirerPaymentResponse> ProcessPaymentAsync(AcquirerPaymentRequest request, CancellationToken cancellationToken = default)
@@ -123,7 +144,7 @@ public class AcquirerGrain : Grain, IAcquirerGrain
 
         var successCount = _state.State.RecentRequests.Count(r => r.IsSuccess);
         var failureCount = _state.State.RecentRequests.Count(r => !r.IsSuccess);
-        var averageResponseTime = _state.State.RecentRequests.Any()
+        var averageResponseTime = _state.State.RecentRequests.Count > 0
             ? _state.State.RecentRequests.Average(r => r.ResponseTime.TotalMilliseconds)
             : 0;
 
@@ -217,8 +238,70 @@ public class AcquirerGrain : Grain, IAcquirerGrain
         _state.State.RecentRequests.RemoveAll(r => r.Timestamp < cutoff);
     }
 
+    private async Task<AcquirerPaymentResponse> HandleRetryAsync(string paymentKey, AcquirerPaymentRequest request, Exception originalException, CancellationToken cancellationToken)
+    {
+        _state.State.PaymentRetryCount[paymentKey]++;
+        var retryCount = _state.State.PaymentRetryCount[paymentKey];
+
+        // For ServiceUnavailable errors, don't retry - fail immediately
+        if (originalException is HttpRequestException httpEx && httpEx.StatusCode == HttpStatusCode.ServiceUnavailable)
+        {
+            _logger.LogWarning("Service unavailable for payment {PaymentKey} on acquirer {AcquirerId}, not retrying",
+                paymentKey, this.GetPrimaryKeyString());
+
+            // Clean up retry state
+            _state.State.PaymentRetryCount.Remove(paymentKey);
+            await _state.WriteStateAsync(cancellationToken);
+
+            // Re-throw the original exception
+            throw originalException;
+        }
+
+        if (retryCount >= _state.State.Configuration.MaxRetries)
+        {
+            _logger.LogWarning("Payment {PaymentKey} failed after {RetryCount} retries for acquirer {AcquirerId}",
+                paymentKey, retryCount, this.GetPrimaryKeyString());
+
+            // Clean up retry state
+            _state.State.PaymentRetryCount.Remove(paymentKey);
+            await _state.WriteStateAsync(cancellationToken);
+
+            // Re-throw the original exception
+            throw originalException;
+        }
+
+        await _state.WriteStateAsync(cancellationToken);
+
+        var retryDelay = TimeSpan.FromSeconds(Math.Pow(2, retryCount));
+        _logger.LogInformation("Payment {PaymentKey} scheduled for retry #{RetryCount} in {Delay} for acquirer {AcquirerId}",
+            paymentKey, retryCount, retryDelay, this.GetPrimaryKeyString());
+
+        // Use Orleans timer for retry
+        var tcs = new TaskCompletionSource<AcquirerPaymentResponse>();
+        _retryTimer = this.RegisterGrainTimer(async () =>
+        {
+            try
+            {
+                var result = await ProcessPaymentWithRetryAsync(request, cancellationToken);
+                tcs.SetResult(result);
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        }, new() { DueTime = retryDelay, Period = TimeSpan.MaxValue, Interleave = true });
+
+        return await tcs.Task;
+    }
+
     private static string GetCardLastFour(string cardNumber)
     {
-        return cardNumber.Length >= 4 ? cardNumber.Substring(cardNumber.Length - 4) : "****";
+        return cardNumber.Length >= 4 ? cardNumber[^4..] : "****";
+    }
+
+    public override Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        _retryTimer?.Dispose();
+        return base.OnDeactivateAsync(reason, cancellationToken);
     }
 }
