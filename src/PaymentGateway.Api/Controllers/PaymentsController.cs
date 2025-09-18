@@ -3,13 +3,14 @@ using Microsoft.AspNetCore.Http;
 
 using PaymentGateway.Api.Models.Requests;
 using PaymentGateway.Api.Models.Responses;
+using PaymentGateway.Api.Models.Acquirer;
 using PaymentGateway.Api.Services;
 
 namespace PaymentGateway.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class PaymentsController(PaymentsRepository paymentsRepository, CardValidationService cardValidationService) : Controller
+public class PaymentsController(PaymentsRepository paymentsRepository, CardValidationService cardValidationService, IAcquirerClient acquirerClient) : Controller
 {
     [HttpGet("{id:guid}")]
     [Produces("application/vnd.paymentgateway.payment+json", "application/json")]
@@ -77,11 +78,24 @@ public class PaymentsController(PaymentsRepository paymentsRepository, CardValid
             return BadRequest(rejectedResponse);
         }
 
-        // For now, simulate a successful payment with hardcoded Authorized status
+        // Create acquiring bank request
+        var bankRequest = new AcquirerPaymentRequest
+        {
+            CardNumber = request.CardNumber,
+            ExpiryDate = $"{request.ExpiryMonth:D2}/{request.ExpiryYear}",
+            Currency = request.Currency,
+            Amount = request.Amount,
+            Cvv = request.Cvv
+        };
+
+        // Call acquiring bank
+        var bankResponse = await acquirerClient.ProcessPaymentAsync(bankRequest);
+
+        // Create payment response based on bank result
         var paymentResponse = new PostPaymentResponse
         {
             Id = Guid.NewGuid(),
-            Status = PaymentGateway.Api.Models.PaymentStatus.Authorized,
+            Status = bankResponse.Authorized ? PaymentGateway.Api.Models.PaymentStatus.Authorized : PaymentGateway.Api.Models.PaymentStatus.Declined,
             CardNumberLastFour = request.CardNumber.Substring(request.CardNumber.Length - 4),
             ExpiryMonth = request.ExpiryMonth,
             ExpiryYear = request.ExpiryYear,

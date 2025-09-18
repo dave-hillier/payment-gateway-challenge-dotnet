@@ -18,6 +18,15 @@ builder.Services.AddSingleton<PaymentsRepository>();
 builder.Services.AddSingleton<IdempotencyService>();
 builder.Services.AddScoped<CardValidationService>();
 
+// Configure HttpClient for acquiring bank communication
+builder.Services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(client =>
+{
+    client.BaseAddress = new Uri("http://localhost:8080");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.DefaultRequestHeaders.Add("User-Agent", "PaymentGateway/1.0");
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -29,6 +38,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<IdempotencyMiddleware>();
 
 app.UseAuthorization();
