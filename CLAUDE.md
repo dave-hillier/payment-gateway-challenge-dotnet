@@ -22,8 +22,8 @@ dotnet run --project src/PaymentGateway.Api
 # Run unit tests only (default - excludes E2E tests)
 dotnet test --filter "Category!=E2E"
 
-# Run E2E tests (requires services to be running)
-dotnet test --filter "Category=E2E"
+# Run E2E tests (requires Bank Simulator to be running)
+docker-compose up && dotnet test --filter "Category=E2E" 
 
 # Run all tests (unit + E2E)
 dotnet test

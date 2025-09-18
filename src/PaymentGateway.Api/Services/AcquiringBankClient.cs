@@ -57,5 +57,26 @@ public class AcquiringBankClient(HttpClient httpClient, ILogger<AcquiringBankCli
             throw;
         }
     }
+
+    public async Task<AcquirerPaymentResponse> ProcessPaymentAsync(
+        string cardNumber,
+        int expiryMonth,
+        int expiryYear,
+        string currency,
+        int amount,
+        string cvv,
+        CancellationToken cancellationToken = default)
+    {
+        var request = new AcquirerPaymentRequest
+        {
+            CardNumber = cardNumber,
+            ExpiryDate = $"{expiryMonth:D2}/{expiryYear}",
+            Currency = currency,
+            Amount = amount,
+            Cvv = cvv
+        };
+
+        return await ProcessPaymentAsync(request, cancellationToken);
+    }
 }
 
