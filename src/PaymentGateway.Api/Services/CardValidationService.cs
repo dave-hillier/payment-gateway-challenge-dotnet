@@ -1,5 +1,3 @@
-using System;
-
 namespace PaymentGateway.Api.Services;
 
 public class CardValidationService

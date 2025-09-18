@@ -5,21 +5,12 @@ using PaymentGateway.Api.Models.Acquirer;
 
 namespace PaymentGateway.Api.Services;
 
-public class AcquiringBankClient : IAcquirerClient
+public class AcquiringBankClient(HttpClient httpClient, ILogger<AcquiringBankClient> logger) : IAcquirerClient
 {
-    private readonly HttpClient _httpClient;
-    private readonly ILogger<AcquiringBankClient> _logger;
-    private readonly JsonSerializerOptions _jsonOptions;
-
-    public AcquiringBankClient(HttpClient httpClient, ILogger<AcquiringBankClient> logger)
+    private readonly JsonSerializerOptions _jsonOptions = new()
     {
-        _httpClient = httpClient;
-        _logger = logger;
-        _jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-        };
-    }
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
 
     public async Task<AcquirerPaymentResponse> ProcessPaymentAsync(AcquirerPaymentRequest request, CancellationToken cancellationToken = default)
     {
@@ -28,14 +19,14 @@ public class AcquiringBankClient : IAcquirerClient
             var json = JsonSerializer.Serialize(request, _jsonOptions);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            _logger.LogInformation("Sending payment request to acquiring bank for card ending in {CardLastFour}",
+            logger.LogInformation("Sending payment request to acquiring bank for card ending in {CardLastFour}",
                 request.CardNumber.Length >= 4 ? request.CardNumber.Substring(request.CardNumber.Length - 4) : "****");
 
-            var response = await _httpClient.PostAsync("/payments", content, cancellationToken);
+            var response = await httpClient.PostAsync("/payments", content, cancellationToken);
 
             if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
             {
-                _logger.LogWarning("Acquiring bank service unavailable (503) for card ending in {CardLastFour}",
+                logger.LogWarning("Acquiring bank service unavailable (503) for card ending in {CardLastFour}",
                     request.CardNumber.Length >= 4 ? request.CardNumber.Substring(request.CardNumber.Length - 4) : "****");
             }
 
@@ -44,7 +35,7 @@ public class AcquiringBankClient : IAcquirerClient
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
             var acquirerResponse = JsonSerializer.Deserialize<AcquirerPaymentResponse>(responseContent, _jsonOptions);
 
-            _logger.LogInformation("Received acquiring bank response for card ending in {CardLastFour}: {Authorized}",
+            logger.LogInformation("Received acquiring bank response for card ending in {CardLastFour}: {Authorized}",
                 request.CardNumber.Length >= 4 ? request.CardNumber.Substring(request.CardNumber.Length - 4) : "****",
                 acquirerResponse?.Authorized);
 
@@ -52,17 +43,17 @@ public class AcquiringBankClient : IAcquirerClient
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "HTTP error occurred while processing payment with acquiring bank");
+            logger.LogError(ex, "HTTP error occurred while processing payment with acquiring bank");
             throw;
         }
         catch (TaskCanceledException ex)
         {
-            _logger.LogError(ex, "Timeout occurred while processing payment with acquiring bank");
+            logger.LogError(ex, "Timeout occurred while processing payment with acquiring bank");
             throw;
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "Error deserializing acquiring bank response");
+            logger.LogError(ex, "Error deserializing acquiring bank response");
             throw;
         }
     }

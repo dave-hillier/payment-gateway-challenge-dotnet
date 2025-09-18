@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Http;
-
+using PaymentGateway.Api.Enums;
 using PaymentGateway.Api.Models.Requests;
 using PaymentGateway.Api.Models.Responses;
 using PaymentGateway.Api.Models.Acquirer;
@@ -43,7 +42,7 @@ public class PaymentsController(PaymentsRepository paymentsRepository, CardValid
             var rejectedResponse = new PostPaymentResponse
             {
                 Id = Guid.NewGuid(),
-                Status = PaymentGateway.Api.Models.PaymentStatus.Rejected,
+                Status = PaymentStatus.Rejected,
                 CardNumberLastFour = request?.CardNumber?.Length >= 4
                     ? request.CardNumber.Substring(request.CardNumber.Length - 4)
                     : "0000",
@@ -65,7 +64,7 @@ public class PaymentsController(PaymentsRepository paymentsRepository, CardValid
             var rejectedResponse = new PostPaymentResponse
             {
                 Id = Guid.NewGuid(),
-                Status = PaymentGateway.Api.Models.PaymentStatus.Rejected,
+                Status = PaymentStatus.Rejected,
                 CardNumberLastFour = request.CardNumber?.Length >= 4
                     ? request.CardNumber.Substring(request.CardNumber.Length - 4)
                     : "0000",
@@ -95,7 +94,7 @@ public class PaymentsController(PaymentsRepository paymentsRepository, CardValid
         var paymentResponse = new PostPaymentResponse
         {
             Id = Guid.NewGuid(),
-            Status = bankResponse.Authorized ? PaymentGateway.Api.Models.PaymentStatus.Authorized : PaymentGateway.Api.Models.PaymentStatus.Declined,
+            Status = bankResponse.Authorized ? PaymentStatus.Authorized : PaymentStatus.Declined,
             CardNumberLastFour = request.CardNumber.Substring(request.CardNumber.Length - 4),
             ExpiryMonth = request.ExpiryMonth,
             ExpiryYear = request.ExpiryYear,

@@ -3,22 +3,13 @@ using System.Text.Json;
 
 namespace PaymentGateway.Api.Middleware;
 
-public class ExceptionHandlingMiddleware
+public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
-
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
-
     public async Task InvokeAsync(HttpContext context)
     {
         try
         {
-            await _next(context);
+            await next(context);
         }
         catch (Exception ex)
         {
@@ -30,7 +21,7 @@ public class ExceptionHandlingMiddleware
     {
         var (statusCode, message) = GetErrorResponse(exception);
 
-        _logger.LogError(exception, "Unhandled exception occurred: {ExceptionType} - {ExceptionMessage} - Mapped to: {StatusCode} - {Message}",
+        logger.LogError(exception, "Unhandled exception occurred: {ExceptionType} - {ExceptionMessage} - Mapped to: {StatusCode} - {Message}",
             exception.GetType().Name, exception.Message, statusCode, message);
 
         context.Response.StatusCode = (int)statusCode;

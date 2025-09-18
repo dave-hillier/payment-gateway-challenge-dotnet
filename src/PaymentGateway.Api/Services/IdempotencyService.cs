@@ -20,22 +20,19 @@ public class IdempotencyService
 
     public IdempotencyRecord? Get(string key)
     {
-        if (_cache.TryGetValue(key, out var record))
+        if (!_cache.TryGetValue(key, out var record))
         {
-            if (DateTime.UtcNow - record.CreatedAt < TimeSpan.FromHours(24))
-            {
-                return record;
-            }
-
-            _cache.TryRemove(key, out _);
+            return null;
         }
 
-        return null;
-    }
+        if (DateTime.UtcNow - record.CreatedAt < TimeSpan.FromHours(24))
+        {
+            return record;
+        }
 
-    public bool IsProcessing(string key)
-    {
-        return _cache.ContainsKey(key) && _cache[key].Response == null;
+        _cache.TryRemove(key, out _);
+
+        return null;
     }
 
     public void MarkAsProcessing(string key)

@@ -1,25 +1,15 @@
-using System.Text;
 using System.Text.Json;
 using PaymentGateway.Api.Services;
 
 namespace PaymentGateway.Api.Middleware;
 
-public class IdempotencyMiddleware
+public class IdempotencyMiddleware(RequestDelegate next, IdempotencyService idempotencyService)
 {
-    private readonly RequestDelegate _next;
-    private readonly IdempotencyService _idempotencyService;
-
-    public IdempotencyMiddleware(RequestDelegate next, IdempotencyService idempotencyService)
-    {
-        _next = next;
-        _idempotencyService = idempotencyService;
-    }
-
     public async Task InvokeAsync(HttpContext context)
     {
         if (!ShouldProcessIdempotency(context))
         {
-            await _next(context);
+            await next(context);
             return;
         }
 
@@ -27,11 +17,11 @@ public class IdempotencyMiddleware
 
         if (string.IsNullOrEmpty(idempotencyKey))
         {
-            await _next(context);
+            await next(context);
             return;
         }
 
-        var existingRecord = _idempotencyService.Get(idempotencyKey);
+        var existingRecord = idempotencyService.Get(idempotencyKey);
         if (existingRecord != null)
         {
             if (existingRecord.Response == null)
@@ -48,13 +38,13 @@ public class IdempotencyMiddleware
             return;
         }
 
-        _idempotencyService.MarkAsProcessing(idempotencyKey);
+        idempotencyService.MarkAsProcessing(idempotencyKey);
 
         var originalBodyStream = context.Response.Body;
         using var responseBodyStream = new MemoryStream();
         context.Response.Body = responseBodyStream;
 
-        await _next(context);
+        await next(context);
 
         responseBodyStream.Seek(0, SeekOrigin.Begin);
         var responseBody = await new StreamReader(responseBodyStream).ReadToEndAsync();
@@ -64,7 +54,7 @@ public class IdempotencyMiddleware
             var responseObject = JsonSerializer.Deserialize<object>(responseBody);
             if (responseObject != null)
             {
-                _idempotencyService.Store(idempotencyKey, responseObject, context.Response.StatusCode);
+                idempotencyService.Store(idempotencyKey, responseObject, context.Response.StatusCode);
             }
         }
 
