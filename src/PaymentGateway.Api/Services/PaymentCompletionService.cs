@@ -9,7 +9,7 @@ public interface IPaymentCompletionService
     void NotifyCompletion(PaymentRequest payment);
 }
 
-public class PaymentCompletionService : IPaymentCompletionService
+public class InMemoryPaymentCompletionService : IPaymentCompletionService
 {
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<PaymentRequest>> _pendingPayments = new();
 

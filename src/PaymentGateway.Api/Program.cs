@@ -3,6 +3,7 @@ using PaymentGateway.Api.Middleware;
 using PaymentGateway.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Data.Common;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,8 +33,34 @@ builder.Services.AddDbContext<PaymentGatewayDbContext>((container, options) =>
     options.UseSqlite(connection);
 });
 builder.Services.AddSingleton<IdempotencyService>();
-builder.Services.AddSingleton<IPaymentCompletionService, PaymentCompletionService>();
 builder.Services.AddScoped<CardValidationService>();
+
+// Configure Redis
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrEmpty(redisConnectionString))
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
+    {
+        var logger = provider.GetRequiredService<ILogger<Program>>();
+        try
+        {
+            var redis = ConnectionMultiplexer.Connect(redisConnectionString);
+            logger.LogInformation("Connected to Redis at {ConnectionString}", redisConnectionString);
+            return redis;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to connect to Redis at {ConnectionString}", redisConnectionString);
+            throw;
+        }
+    });
+
+    builder.Services.AddSingleton<IPaymentCompletionService, RedisPaymentCompletionService>();
+}
+else
+{
+    builder.Services.AddSingleton<IPaymentCompletionService, InMemoryPaymentCompletionService>();
+}
 
 // Configure HttpClient for acquiring bank communication
 builder.Services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(client =>
