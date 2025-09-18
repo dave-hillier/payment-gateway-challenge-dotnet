@@ -19,14 +19,23 @@ dotnet build
 # Run the API
 dotnet run --project src/PaymentGateway.Api
 
-# Run tests
+# Run unit tests only (default - excludes E2E tests)
+dotnet test --filter "Category!=E2E"
+
+# Run E2E tests (requires services to be running)
+dotnet test --filter "Category=E2E"
+
+# Run all tests (unit + E2E)
 dotnet test
 
 # Run a specific test
 dotnet test --filter "FullyQualifiedName~PaymentGateway.Api.Tests.TestClassName.TestMethodName"
 
-# Start bank simulator (required for integration)
+# Start bank simulator (required for E2E tests)
 docker-compose up
+
+# Run full E2E test suite (includes service orchestration)
+./test-e2e.sh
 ```
 
 ### Bank Simulator
@@ -45,7 +54,9 @@ docker-compose up
   - Services: Business logic and repository layer
   - Enums: PaymentStatus (Authorized, Declined, Rejected)
 
-- **PaymentGateway.Api.Tests**: xUnit test project with AspNetCore.Mvc.Testing for integration tests
+- **PaymentGateway.Api.Tests**: xUnit test project with unit tests and E2E tests
+  - Unit tests: Fast isolated tests (default when running `dotnet test`)
+  - E2E tests: Full integration tests marked with `[Trait("Category", "E2E")]` that require running services
 
 ### Key Implementation Requirements
 
@@ -73,6 +84,23 @@ docker-compose up
 - Models defined but missing full card number field in PostPaymentRequest
 - PaymentStatus enum includes all required statuses
 - No validation or bank integration yet implemented
+
+## Testing Strategy
+
+### Test Categories
+- **Unit Tests**: Run by default with `dotnet test` (fast, isolated, no external dependencies)
+- **E2E Tests**: Run explicitly with `dotnet test --filter "Category=E2E"` (requires running services)
+- **Full E2E Suite**: Use `./test-e2e.sh` for complete test with service orchestration
+
+### E2E Test Scenarios
+The E2E tests cover 11 comprehensive scenarios:
+1. Success scenario (odd card numbers → Authorized)
+2. Bank decline (even card numbers → Declined)
+3. Validation failures (invalid card data → Rejected)
+4. Bank service errors (card ending in 0 → 502/503)
+5. Payment retrieval (GET endpoints)
+6. Idempotency testing (duplicate requests)
+7. Service unavailability scenarios
 
 ## Important Notes
 - The PaymentsRepository is an in-memory test double - no real database required
