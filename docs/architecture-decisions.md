@@ -2,9 +2,10 @@
 
 ## Initial approach/steps
 
-1. Make the repo match the assessment specification.
-2. Consider how the assessment diverges from the real.
-3. Add e2e tests using curl: Success, bank decline, validation failure, duplicate & bank failure.
+- [x] Make the repo match the assessment specification.
+- [x] Consider how the assessment diverges from the real.
+- [x] Add e2e tests using curl: Success, bank decline, validation failure, duplicate & bank failure.
+- [ ] Implement idempotency key header
 
 The challenge calls for "not overengineering" - to me I apply [Beck Design Rules](https://martinfowler.com/bliki/BeckDesignRules.html). However, I also do not want to under-engineer the system and therefore I am considering it a challenge to give "at least once" delivery guarantees.
 
@@ -14,3 +15,11 @@ The challenge calls for "not overengineering" - to me I apply [Beck Design Rules
 - use strings for CardNumberLastFour and CVV to preserve leading zeros and it's common convention including checkout.com's own APIs
 - Checkout.com [API reference](https://api-reference.checkout.com/#tag/Payments)
 - Checkout.com [Payment](https://www.checkout.com/docs/payments/accept-payments/accept-a-payment-using-the-payments-api)
+
+## Comparison to real API
+
+- Accepts tokens
+- 3DS flow has pending
+- Uses idempotency key
+- Capture, refund and void
+- Loads more fields
