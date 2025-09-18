@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using PaymentGateway.Api.Controllers;
 using PaymentGateway.Api.Models.Requests;
 using PaymentGateway.Api.Models.Responses;
+using PaymentGateway.Api.Services;
+using PaymentGateway.Api.Tests.Mocks;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace PaymentGateway.Api.Tests;
 
@@ -10,7 +13,19 @@ public class IdempotencyTests
 {
     private readonly WebApplicationFactory<PaymentsController> _factory = new();
 
-    private HttpClient CreateClient() => _factory.CreateClient();
+    private HttpClient CreateClient()
+    {
+        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
+        return _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
+                {
+                    httpClient.BaseAddress = new Uri("http://localhost:8080");
+                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
+            }))
+            .CreateClient();
+    }
 
     [Fact]
     public async Task PostPayment_WithIdempotencyKey_ReturnsSameResponseOnSecondRequest()
