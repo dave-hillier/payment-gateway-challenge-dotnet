@@ -45,7 +45,7 @@ public class PaymentGrain : Grain, IPaymentGrain
         _state.State.Id = paymentId;
         _state.State.CardNumber = cardNumber;
         _state.State.CardNumberLastFour = cardNumber.Length >= 4
-            ? cardNumber.Substring(cardNumber.Length - 4)
+            ? cardNumber[^4..]
             : "0000";
         _state.State.ExpiryMonth = expiryMonth;
         _state.State.ExpiryYear = expiryYear;
@@ -110,8 +110,8 @@ public class PaymentGrain : Grain, IPaymentGrain
 
             // Configure the acquirer grain with centralized configuration
             var acquirerId = acquirerGrain.GetPrimaryKeyString();
-            var config = _acquirerRouter.GetAcquirerConfiguration(acquirerId);
-            await acquirerGrain.ConfigureAsync(config);
+            var (baseUrl, timeout) = _acquirerRouter.GetAcquirerConfiguration(acquirerId);
+            await acquirerGrain.ConfigureAsync(baseUrl, timeout);
 
             var acquirerRequest = new AcquirerPaymentRequest
             {
@@ -122,8 +122,7 @@ public class PaymentGrain : Grain, IPaymentGrain
                 Cvv = _state.State.CVV
             };
 
-            // Use the retry-capable method from AcquirerGrain
-            var bankResponse = await acquirerGrain.ProcessPaymentWithRetryAsync(acquirerRequest, CancellationToken.None);
+            var bankResponse = await acquirerGrain.ProcessPaymentAsync(acquirerRequest, CancellationToken.None);
 
             _state.State.Status = bankResponse.Authorized switch
             {

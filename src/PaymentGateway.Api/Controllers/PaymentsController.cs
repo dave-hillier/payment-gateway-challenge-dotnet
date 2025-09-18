@@ -10,8 +10,7 @@ namespace PaymentGateway.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class PaymentsController(
-    IClusterClient clusterClient) : Controller
+public class PaymentsController(IClusterClient clusterClient) : Controller
 {
     [HttpGet("{id:guid}")]
     [Produces("application/vnd.paymentgateway.payment+json", "application/json")]
