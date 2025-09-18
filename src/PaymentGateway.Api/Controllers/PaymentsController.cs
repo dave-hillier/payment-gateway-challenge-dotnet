@@ -96,7 +96,7 @@ public class PaymentsController(
         }
 
         // Get idempotency key from headers if present
-        var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault();
+        var idempotencyKey = Request.Headers["Cko-Idempotency-Key"].FirstOrDefault();
 
         // Check for existing payment with same idempotency key
         if (!string.IsNullOrEmpty(idempotencyKey))

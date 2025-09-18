@@ -32,7 +32,7 @@ builder.Services.AddDbContext<PaymentGatewayDbContext>((container, options) =>
     var connection = container.GetRequiredService<DbConnection>();
     options.UseSqlite(connection);
 });
-builder.Services.AddSingleton<IdempotencyService>();
+builder.Services.AddScoped<IdempotencyService>();
 builder.Services.AddScoped<CardValidationService>();
 
 // Configure Redis

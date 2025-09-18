@@ -3,9 +3,14 @@ using PaymentGateway.Api.Services;
 
 namespace PaymentGateway.Api.Middleware;
 
-public class IdempotencyMiddleware(RequestDelegate next, IdempotencyService idempotencyService)
+public class IdempotencyMiddleware(RequestDelegate next)
 {
-    public async Task InvokeAsync(HttpContext context)
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    public async Task InvokeAsync(HttpContext context, IdempotencyService idempotencyService)
     {
         if (!ShouldProcessIdempotency(context))
         {
@@ -21,24 +26,16 @@ public class IdempotencyMiddleware(RequestDelegate next, IdempotencyService idem
             return;
         }
 
-        var existingRecord = idempotencyService.Get(idempotencyKey);
+        var existingRecord = await idempotencyService.GetAsync(idempotencyKey);
         if (existingRecord != null)
         {
-            if (existingRecord.Response == null)
-            {
-                context.Response.StatusCode = 409;
-                await context.Response.WriteAsync("Concurrent request detected");
-                return;
-            }
-
+            // Payment exists - return the existing payment response
             context.Response.StatusCode = existingRecord.StatusCode;
             context.Response.ContentType = "application/json";
-            var jsonResponse = JsonSerializer.Serialize(existingRecord.Response);
+            var jsonResponse = JsonSerializer.Serialize(existingRecord.Response, JsonOptions);
             await context.Response.WriteAsync(jsonResponse);
             return;
         }
-
-        idempotencyService.MarkAsProcessing(idempotencyKey);
 
         var originalBodyStream = context.Response.Body;
         using var responseBodyStream = new MemoryStream();
@@ -54,7 +51,7 @@ public class IdempotencyMiddleware(RequestDelegate next, IdempotencyService idem
             var responseObject = JsonSerializer.Deserialize<object>(responseBody);
             if (responseObject != null)
             {
-                idempotencyService.Store(idempotencyKey, responseObject, context.Response.StatusCode);
+                await idempotencyService.StoreAsync(idempotencyKey, responseObject, context.Response.StatusCode);
             }
         }
 

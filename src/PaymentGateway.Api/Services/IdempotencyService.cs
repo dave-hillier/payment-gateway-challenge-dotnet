@@ -1,55 +1,101 @@
-using System.Collections.Concurrent;
+using Microsoft.EntityFrameworkCore;
+using PaymentGateway.Api.Data;
+using PaymentGateway.Api.Data.Entities;
 
 namespace PaymentGateway.Api.Services;
 
 public class IdempotencyService
 {
-    private readonly ConcurrentDictionary<string, IdempotencyRecord> _cache = new();
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
-    public void Store(string key, object response, int statusCode)
+    public IdempotencyService(IServiceScopeFactory serviceScopeFactory)
     {
-        var record = new IdempotencyRecord
-        {
-            Response = response,
-            StatusCode = statusCode,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _cache.AddOrUpdate(key, record, (k, v) => record);
+        _serviceScopeFactory = serviceScopeFactory;
     }
 
-    public IdempotencyRecord? Get(string key)
+    public async Task StoreAsync(string key, object response, int statusCode)
     {
-        if (!_cache.TryGetValue(key, out var record))
+        using var scope = _serviceScopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<PaymentGatewayDbContext>();
+
+        var existingPayment = await dbContext.PaymentRequests
+            .FirstOrDefaultAsync(p => p.IdempotencyKey == key);
+
+        if (existingPayment != null)
+        {
+            // Update existing record (though this shouldn't happen in normal flow)
+            return;
+        }
+    }
+
+    public async Task<IdempotencyRecord?> GetAsync(string key)
+    {
+        using var scope = _serviceScopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<PaymentGatewayDbContext>();
+
+        var payment = await dbContext.PaymentRequests
+            .FirstOrDefaultAsync(p => p.IdempotencyKey == key);
+
+        if (payment == null)
         {
             return null;
         }
 
-        if (DateTime.UtcNow - record.CreatedAt < TimeSpan.FromHours(24))
+        // Check if the payment is too old (24 hours)
+        if (DateTime.UtcNow - payment.CreatedAt > TimeSpan.FromHours(24))
         {
-            return record;
+            return null;
         }
 
-        _cache.TryRemove(key, out _);
-
-        return null;
-    }
-
-    public void MarkAsProcessing(string key)
-    {
-        var record = new IdempotencyRecord
+        // Create the payment response object from the database record
+        var paymentResponse = new
         {
-            Response = null,
-            StatusCode = 0,
-            CreatedAt = DateTime.UtcNow
+            id = payment.Id,
+            status = payment.Status,
+            cardNumberLastFour = payment.CardNumberLastFour,
+            expiryMonth = payment.ExpiryMonth,
+            expiryYear = payment.ExpiryYear,
+            currency = payment.Currency,
+            amount = payment.Amount
         };
 
-        _cache.TryAdd(key, record);
+        // Return a record with the actual payment response
+        return new IdempotencyRecord
+        {
+            PaymentId = payment.Id,
+            Response = paymentResponse,
+            StatusCode = GetStatusCode(payment),
+            CreatedAt = payment.CreatedAt
+        };
+    }
+
+    public async Task<bool> MarkAsProcessingAsync(string key)
+    {
+        using var scope = _serviceScopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<PaymentGatewayDbContext>();
+
+        // Check if payment already exists with this idempotency key
+        var existingPayment = await dbContext.PaymentRequests
+            .FirstOrDefaultAsync(p => p.IdempotencyKey == key);
+
+        return existingPayment == null; // Return true if we can proceed, false if duplicate
+    }
+
+    private static int GetStatusCode(PaymentRequest payment)
+    {
+        return payment.Status switch
+        {
+            Enums.PaymentStatus.Authorized => 200,
+            Enums.PaymentStatus.Declined => 200,
+            Enums.PaymentStatus.Rejected => 400,
+            _ => 202 // Processing
+        };
     }
 }
 
 public class IdempotencyRecord
 {
+    public Guid? PaymentId { get; set; }
     public object? Response { get; set; }
     public int StatusCode { get; set; }
     public DateTime CreatedAt { get; set; }
