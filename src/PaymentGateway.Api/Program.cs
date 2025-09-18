@@ -1,9 +1,7 @@
 using PaymentGateway.Api.Services;
 using PaymentGateway.Api.Middleware;
-using PaymentGateway.Api.Data;
-using Microsoft.EntityFrameworkCore;
-using System.Data.Common;
-using StackExchange.Redis;
+using PaymentGateway.Api.Grains;
+using Orleans.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,49 +16,16 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configure Entity Framework with SQLite
-// Note: Using in-memory database requires keeping connection open
-builder.Services.AddSingleton<DbConnection>(container =>
+// Configure Orleans
+builder.Host.UseOrleans(silo =>
 {
-    var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
-    connection.Open();
-    return connection;
+    silo
+        .UseLocalhostClustering()
+        .AddMemoryGrainStorage("paymentStore")
+        .ConfigureLogging(logging => logging.AddConsole());
 });
 
-builder.Services.AddDbContext<PaymentGatewayDbContext>((container, options) =>
-{
-    var connection = container.GetRequiredService<DbConnection>();
-    options.UseSqlite(connection);
-});
-builder.Services.AddScoped<IdempotencyService>();
 builder.Services.AddScoped<CardValidationService>();
-
-// Configure Redis
-var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
-if (!string.IsNullOrEmpty(redisConnectionString))
-{
-    builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
-    {
-        var logger = provider.GetRequiredService<ILogger<Program>>();
-        try
-        {
-            var redis = ConnectionMultiplexer.Connect(redisConnectionString);
-            logger.LogInformation("Connected to Redis at {ConnectionString}", redisConnectionString);
-            return redis;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to connect to Redis at {ConnectionString}", redisConnectionString);
-            throw;
-        }
-    });
-
-    builder.Services.AddSingleton<IPaymentCompletionService, RedisPaymentCompletionService>();
-}
-else
-{
-    builder.Services.AddSingleton<IPaymentCompletionService, InMemoryPaymentCompletionService>();
-}
 
 // Configure HttpClient for acquiring bank communication
 builder.Services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(client =>
@@ -71,17 +36,9 @@ builder.Services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(client =>
     client.DefaultRequestHeaders.Add("User-Agent", "PaymentGateway/1.0");
 });
 
-// Register the background service for processing payments
-builder.Services.AddHostedService<PaymentProcessorService>();
 
 var app = builder.Build();
 
-// Ensure database is created
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<PaymentGatewayDbContext>();
-    dbContext.Database.EnsureCreated();
-}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -93,7 +50,6 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseMiddleware<IdempotencyMiddleware>();
 
 app.UseAuthorization();
 

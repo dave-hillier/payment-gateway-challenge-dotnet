@@ -1,17 +1,15 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PaymentGateway.Api.Controllers;
-using PaymentGateway.Api.Data;
-using PaymentGateway.Api.Data.Entities;
 using PaymentGateway.Api.Enums;
 using PaymentGateway.Api.Models.Requests;
 using PaymentGateway.Api.Models.Responses;
 using PaymentGateway.Api.Services;
 using PaymentGateway.Api.Tests.Mocks;
-using System.Data.Common;
+using PaymentGateway.Api.Grains;
+using Orleans;
 
 namespace PaymentGateway.Api.Tests;
 
@@ -23,61 +21,42 @@ public class PaymentsControllerTests
     public async Task RetrievesAPaymentSuccessfully()
     {
         // Arrange
-        var paymentId = Guid.NewGuid();
-        var payment = new PaymentRequest
+        var paymentRequest = new PostPaymentRequest
         {
-            Id = paymentId,
-            ExpiryYear = _random.Next(2026, 2030),
-            ExpiryMonth = _random.Next(1, 12),
-            Amount = _random.Next(1, 10000),
             CardNumber = "4242424242424242",
-            CardNumberLastFour = "4242",
+            ExpiryMonth = _random.Next(1, 12),
+            ExpiryYear = _random.Next(2026, 2030),
             Currency = "GBP",
-            CVV = "123",
-            Status = PaymentStatus.Authorized,
-            CreatedAt = DateTime.UtcNow
+            Amount = _random.Next(1, 10000),
+            Cvv = "123"
         };
 
+        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
         var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
         var client = webApplicationFactory.WithWebHostBuilder(builder =>
             builder.ConfigureServices(services =>
             {
-                // Remove existing DbContext registration
-                var descriptor = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(DbContextOptions<PaymentGatewayDbContext>));
-                if (descriptor != null)
+                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
                 {
-                    services.Remove(descriptor);
-                }
-
-                // Add in-memory database for testing
-                var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=:memory:");
-                connection.Open();
-                services.AddSingleton<DbConnection>(connection);
-
-                services.AddDbContext<PaymentGatewayDbContext>((container, options) =>
-                {
-                    var conn = container.GetRequiredService<DbConnection>();
-                    options.UseSqlite(conn);
-                });
-
-                // Seed test data
-                var serviceProvider = services.BuildServiceProvider();
-                using var scope = serviceProvider.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<PaymentGatewayDbContext>();
-                dbContext.Database.EnsureCreated();
-                dbContext.PaymentRequests.Add(payment);
-                dbContext.SaveChanges();
+                    httpClient.BaseAddress = new Uri("http://localhost:8080");
+                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
             }))
             .CreateClient();
 
-        // Act
+        // First create a payment
+        var createResponse = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
+        var createPaymentResponse = await createResponse.Content.ReadFromJsonAsync<PostPaymentResponse>();
+        var paymentId = createPaymentResponse!.Id;
+
+        // Act - retrieve the payment
         var response = await client.GetAsync($"/api/Payments/{paymentId}");
         var paymentResponse = await response.Content.ReadFromJsonAsync<GetPaymentResponse>();
-        
+
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(paymentResponse);
+        Assert.Equal(paymentId, paymentResponse!.Id);
+        Assert.Equal("4242", paymentResponse.CardNumberLastFour);
     }
 
     [Fact]
