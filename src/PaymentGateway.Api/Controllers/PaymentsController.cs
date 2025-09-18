@@ -43,7 +43,40 @@ public class PaymentsController : Controller
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<ActionResult<PostPaymentResponse>> PostPaymentAsync([FromBody] PostPaymentRequest request)
     {
-        // TODO: Implement payment processing
-        throw new NotImplementedException();
+        if (!ModelState.IsValid)
+        {
+            // Return a rejected payment response for validation failures
+            var rejectedResponse = new PostPaymentResponse
+            {
+                Id = Guid.NewGuid(),
+                Status = PaymentGateway.Api.Models.PaymentStatus.Rejected,
+                CardNumberLastFour = request?.CardNumber?.Length >= 4
+                    ? request.CardNumber.Substring(request.CardNumber.Length - 4)
+                    : "0000",
+                ExpiryMonth = request?.ExpiryMonth ?? 0,
+                ExpiryYear = request?.ExpiryYear ?? 0,
+                Currency = request?.Currency ?? string.Empty,
+                Amount = request?.Amount ?? 0
+            };
+
+            return BadRequest(rejectedResponse);
+        }
+
+        // For now, simulate a successful payment with hardcoded Authorized status
+        var paymentResponse = new PostPaymentResponse
+        {
+            Id = Guid.NewGuid(),
+            Status = PaymentGateway.Api.Models.PaymentStatus.Authorized,
+            CardNumberLastFour = request.CardNumber.Substring(request.CardNumber.Length - 4),
+            ExpiryMonth = request.ExpiryMonth,
+            ExpiryYear = request.ExpiryYear,
+            Currency = request.Currency,
+            Amount = request.Amount
+        };
+
+        // Store the payment for retrieval
+        _paymentsRepository.Add(paymentResponse);
+
+        return Ok(paymentResponse);
     }
 }
