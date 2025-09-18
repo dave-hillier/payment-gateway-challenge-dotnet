@@ -22,13 +22,15 @@ builder.Host.UseOrleans(silo =>
     silo
         .UseLocalhostClustering()
         .AddMemoryGrainStorage("paymentStore")
+        .AddMemoryGrainStorage("acquirerStore")
         .ConfigureLogging(logging => logging.AddConsole());
 });
 
-builder.Services.AddScoped<CardValidationService>();
+builder.Services.AddTransient<CardValidationService>();
+builder.Services.AddTransient<AcquirerRouter>();
 
-// Configure HttpClient for acquiring bank communication
-builder.Services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(client =>
+// Configure HttpClientFactory for acquirer grains
+builder.Services.AddHttpClient("AcquirerClient", client =>
 {
     client.BaseAddress = new Uri("http://localhost:8080");
     client.Timeout = TimeSpan.FromSeconds(30);
@@ -36,9 +38,7 @@ builder.Services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(client =>
     client.DefaultRequestHeaders.Add("User-Agent", "PaymentGateway/1.0");
 });
 
-
 var app = builder.Build();
-
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

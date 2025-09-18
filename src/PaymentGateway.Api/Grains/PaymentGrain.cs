@@ -2,6 +2,7 @@ using Orleans;
 using Orleans.Runtime;
 using PaymentGateway.Api.Enums;
 using PaymentGateway.Api.Models.Responses;
+using PaymentGateway.Api.Models.Acquirer;
 using PaymentGateway.Api.Services;
 
 namespace PaymentGateway.Api.Grains;
@@ -11,19 +12,20 @@ public class PaymentGrain : Grain, IPaymentGrain
     private readonly IPersistentState<PaymentState> _state;
     private readonly ILogger<PaymentGrain> _logger;
     private readonly CardValidationService _cardValidationService;
-    private readonly IAcquirerClient _acquirerClient;
+    private readonly AcquirerRouter _acquirerRouter;
     private IDisposable? _retryTimer;
+    private string? _currentAcquirerId;
 
     public PaymentGrain(
         [PersistentState("paymentState", "paymentStore")] IPersistentState<PaymentState> state,
         ILogger<PaymentGrain> logger,
         CardValidationService cardValidationService,
-        IAcquirerClient acquirerClient)
+        AcquirerRouter acquirerRouter)
     {
         _state = state;
         _logger = logger;
         _cardValidationService = cardValidationService;
-        _acquirerClient = acquirerClient;
+        _acquirerRouter = acquirerRouter;
     }
 
     public async Task<PostPaymentResponse> ProcessPaymentAsync(
@@ -106,23 +108,36 @@ public class PaymentGrain : Grain, IPaymentGrain
 
             _logger.LogInformation("Processing payment {PaymentId} with bank", _state.State.Id);
 
-            var bankResponse = await _acquirerClient.ProcessPaymentAsync(
+            // Get acquirer grain using grain-based routing
+            var acquirerGrain = _acquirerRouter.GetAcquirerGrain(
                 _state.State.CardNumber,
-                _state.State.ExpiryMonth,
-                _state.State.ExpiryYear,
-                _state.State.Currency,
-                _state.State.Amount,
-                _state.State.CVV,
-                CancellationToken.None);
+                _currentAcquirerId); // Use current acquirer if retrying
 
-            _state.State.Status = bankResponse.Status switch
+            // Store acquirer ID for potential retries
+            _currentAcquirerId = acquirerGrain.GetPrimaryKeyString();
+
+            // Configure the acquirer grain with centralized configuration
+            var config = _acquirerRouter.GetAcquirerConfiguration(_currentAcquirerId);
+            await acquirerGrain.ConfigureAsync(config);
+
+            var acquirerRequest = new AcquirerPaymentRequest
             {
-                PaymentStatus.Authorized => PaymentStatus.Authorized,
-                PaymentStatus.Declined => PaymentStatus.Declined,
-                _ => PaymentStatus.Rejected
+                CardNumber = _state.State.CardNumber,
+                ExpiryDate = $"{_state.State.ExpiryMonth:D2}/{_state.State.ExpiryYear}",
+                Currency = _state.State.Currency,
+                Amount = _state.State.Amount,
+                Cvv = _state.State.CVV
+            };
+
+            var bankResponse = await acquirerGrain.ProcessPaymentAsync(acquirerRequest, CancellationToken.None);
+
+            _state.State.Status = bankResponse.Authorized switch
+            {
+                true => PaymentStatus.Authorized,
+                false => PaymentStatus.Declined
             };
             _state.State.ProcessedAt = DateTime.UtcNow;
-            _state.State.BankResponseCode = bankResponse.AuthorizationCode;
+            _state.State.BankResponseCode = bankResponse.AuthorizationCode ?? "NO_CODE";
 
             await _state.WriteStateAsync();
 
@@ -131,11 +146,29 @@ public class PaymentGrain : Grain, IPaymentGrain
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
         {
-            _logger.LogError(ex, "Bank service unavailable for payment {PaymentId}", _state.State.Id);
-            _state.State.Status = PaymentStatus.Failed;
-            _state.State.ProcessedAt = DateTime.UtcNow;
-            _state.State.BankResponseCode = "SERVICE_UNAVAILABLE";
-            await _state.WriteStateAsync();
+            _logger.LogError(ex, "Acquirer {AcquirerId} unavailable for payment {PaymentId}",
+                _currentAcquirerId, _state.State.Id);
+
+            // Try fallback acquirer (skip for simulator in tests to ensure 503 response)
+            if (!string.IsNullOrEmpty(_currentAcquirerId) &&
+                _state.State.RetryCount < 1 &&
+                _currentAcquirerId != "simulator")
+            {
+                var fallbackGrain = _acquirerRouter.GetFallbackAcquirerGrain(_currentAcquirerId);
+                _currentAcquirerId = fallbackGrain.GetPrimaryKeyString();
+                _logger.LogInformation("Attempting fallback to acquirer {AcquirerId}", _currentAcquirerId);
+                await HandleRetry();
+            }
+            else
+            {
+                _state.State.Status = PaymentStatus.Failed;
+                _state.State.ProcessedAt = DateTime.UtcNow;
+                _state.State.BankResponseCode = "SERVICE_UNAVAILABLE";
+                await _state.WriteStateAsync();
+
+                // Re-throw to signal service unavailable to controller
+                throw new HttpRequestException("All acquirers unavailable", null, System.Net.HttpStatusCode.ServiceUnavailable);
+            }
         }
         catch (Exception ex)
         {

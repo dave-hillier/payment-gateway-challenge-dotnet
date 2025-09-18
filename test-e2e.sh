@@ -94,15 +94,7 @@ main() {
     if ! wait_for_service "$BANK_URL/payments" "Bank Simulator"; then
         return 1
     fi
-
-    # Wait for Redis to be ready
-    print_status "Waiting for Redis to be ready..."
-    if ! timeout 30 bash -c 'until echo "PING" | nc -q 1 localhost 6379 | grep -q PONG; do sleep 1; done'; then
-        print_error "Redis failed to start"
-        return 1
-    fi
-    print_success "Redis is ready!"
-
+    
     # Start payment gateway API
     print_status "Starting Payment Gateway API..."
     cd "$(dirname "$0")"

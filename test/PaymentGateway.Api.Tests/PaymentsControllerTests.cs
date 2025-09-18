@@ -2,20 +2,36 @@
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using PaymentGateway.Api.Controllers;
 using PaymentGateway.Api.Enums;
 using PaymentGateway.Api.Models.Requests;
 using PaymentGateway.Api.Models.Responses;
-using PaymentGateway.Api.Services;
 using PaymentGateway.Api.Tests.Mocks;
-using PaymentGateway.Api.Grains;
-using Orleans;
-
 namespace PaymentGateway.Api.Tests;
 
 public class PaymentsControllerTests
 {
     private readonly Random _random = new();
+
+    private static HttpClient CreateTestClient()
+    {
+        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
+        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
+        return webApplicationFactory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                // Configure all HttpClients to use the mock handler
+                services.ConfigureAll<HttpClientFactoryOptions>(options =>
+                {
+                    options.HttpMessageHandlerBuilderActions.Add(builder =>
+                    {
+                        builder.PrimaryHandler = mockHandler;
+                    });
+                });
+            }))
+            .CreateClient();
+    }
     
     [Fact]
     public async Task RetrievesAPaymentSuccessfully()
@@ -31,17 +47,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // First create a payment
         var createResponse = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -87,17 +93,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act
         var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -129,17 +125,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act
         var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -166,17 +152,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act
         var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -202,17 +178,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act
         var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -238,17 +204,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act
         var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -274,17 +230,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act
         var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -312,17 +258,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act
         var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
@@ -347,17 +283,7 @@ public class PaymentsControllerTests
 
         var idempotencyKey = Guid.NewGuid().ToString();
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act - First request
         using var httpRequestMessage1 = new HttpRequestMessage(HttpMethod.Post, "/api/payments");
@@ -396,17 +322,7 @@ public class PaymentsControllerTests
             Cvv = "123"
         };
 
-        var mockHandler = MockHttpMessageHandler.CreateBankSimulator();
-        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
-        var client = webApplicationFactory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.AddHttpClient<IAcquirerClient, AcquiringBankClient>(httpClient =>
-                {
-                    httpClient.BaseAddress = new Uri("http://localhost:8080");
-                }).ConfigurePrimaryHttpMessageHandler(() => mockHandler);
-            }))
-            .CreateClient();
+        var client = CreateTestClient();
 
         // Act - First request without idempotency key
         var response1 = await client.PostAsJsonAsync("/api/payments", request);

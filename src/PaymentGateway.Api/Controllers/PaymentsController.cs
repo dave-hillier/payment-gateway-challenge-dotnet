@@ -75,18 +75,6 @@ public class PaymentsController(
             request.Amount,
             request.Cvv);
 
-        // Check if payment failed due to bank service unavailable
-        if (response.Status == PaymentStatus.Failed)
-        {
-            // Get the payment details to check bank response code
-            var paymentDetails = await paymentGrain.GetPaymentAsync();
-            if (paymentDetails != null &&
-                paymentDetails.Status == PaymentStatus.Failed)
-            {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable);
-            }
-        }
-
         // Check if payment was rejected due to validation failures
         if (response.Status == PaymentStatus.Rejected)
         {

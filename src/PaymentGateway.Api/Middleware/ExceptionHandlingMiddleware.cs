@@ -41,7 +41,9 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
     {
         return exception switch
         {
-            HttpRequestException httpEx when httpEx.Message.Contains("503") || httpEx.Message.Contains("Service Unavailable") =>
+            HttpRequestException httpEx when httpEx.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                                                 httpEx.Message.Contains("503") ||
+                                                 httpEx.Message.Contains("Service Unavailable") =>
                 (HttpStatusCode.ServiceUnavailable, "Acquiring bank service is temporarily unavailable"),
             HttpRequestException httpEx when IsConnectionError(httpEx) =>
                 (HttpStatusCode.ServiceUnavailable, "Service temporarily unavailable due to external dependency failure"),
