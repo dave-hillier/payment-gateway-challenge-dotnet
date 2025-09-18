@@ -60,11 +60,13 @@ run_test() {
     local data=$4
     local expected_status=$5
     local description=$6
+    local extra_headers=$7
 
     print_status "Running test: $test_name - $description"
 
     local response=$(curl -s -k -w "\n%{http_code}" -X "$method" \
         -H "Content-Type: application/json" \
+        ${extra_headers:+-H "$extra_headers"} \
         ${data:+-d "$data"} \
         "$API_URL$endpoint")
 
@@ -78,6 +80,51 @@ run_test() {
         print_error "✗ Test failed: $test_name"
         print_error "Expected status: $expected_status, Got: $status"
         print_error "Response: $body"
+        return 1
+    fi
+
+    echo ""
+    return 0
+}
+
+# Function to run idempotency test
+run_idempotency_test() {
+    local test_name=$1
+    local idempotency_key=$2
+    local data=$3
+    local description=$4
+
+    print_status "Running idempotency test: $test_name - $description"
+
+    # First request
+    local response1=$(curl -s -k -w "\n%{http_code}" -X "POST" \
+        -H "Content-Type: application/json" \
+        -H "Cko-Idempotency-Key: $idempotency_key" \
+        -d "$data" \
+        "$API_URL/api/payments")
+
+    local body1=$(echo "$response1" | head -n -1)
+    local status1=$(echo "$response1" | tail -n 1)
+
+    # Second request with same idempotency key
+    local response2=$(curl -s -k -w "\n%{http_code}" -X "POST" \
+        -H "Content-Type: application/json" \
+        -H "Cko-Idempotency-Key: $idempotency_key" \
+        -d "$data" \
+        "$API_URL/api/payments")
+
+    local body2=$(echo "$response2" | head -n -1)
+    local status2=$(echo "$response2" | tail -n 1)
+
+    # Check if both requests returned same status and response
+    if [ "$status1" = "$status2" ] && [ "$body1" = "$body2" ]; then
+        print_success "✓ Idempotency test passed: $test_name"
+        echo "First response: $body1"
+        echo "Second response: $body2"
+    else
+        print_error "✗ Idempotency test failed: $test_name"
+        print_error "First response (HTTP $status1): $body1"
+        print_error "Second response (HTTP $status2): $body2"
         return 1
     fi
 
@@ -213,8 +260,85 @@ main() {
         failed_tests=$((failed_tests + 1))
     fi
 
-    # Test 8: Bank simulator shutdown test
-    print_status "Test 8: Bank Simulator Shutdown - Service unavailable"
+    # Test 8: Idempotency - Same request twice should return same response
+    print_status "Test 8: Idempotency - Successful payment with same key"
+    # Restart bank simulator for idempotency tests
+    print_status "Restarting bank simulator for idempotency tests..."
+    docker-compose up -d > /dev/null 2>&1
+    wait_for_service "$BANK_URL/payments" "Bank Simulator"
+
+    local idempotency_key_1=$(uuidgen)
+    if ! run_idempotency_test "IDEMPOTENCY_SUCCESS" "$idempotency_key_1" \
+        '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":3000,"cvv":"123"}' \
+        "Two requests with same idempotency key should return identical responses"; then
+        failed_tests=$((failed_tests + 1))
+    fi
+
+    # Test 9: Idempotency - Different keys should create different payments
+    print_status "Test 9: Idempotency - Different keys create different payments"
+    local idempotency_key_2=$(uuidgen)
+
+    # First payment with first key
+    local response1=$(curl -s -k -X POST \
+        -H "Content-Type: application/json" \
+        -H "Cko-Idempotency-Key: $idempotency_key_1" \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":4000,"cvv":"456"}' \
+        "$API_URL/api/payments")
+
+    # Second payment with different key
+    local response2=$(curl -s -k -X POST \
+        -H "Content-Type: application/json" \
+        -H "Cko-Idempotency-Key: $idempotency_key_2" \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":4000,"cvv":"456"}' \
+        "$API_URL/api/payments")
+
+    local id1=$(echo "$response1" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+    local id2=$(echo "$response2" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+    if [ "$id1" != "$id2" ] && [ -n "$id1" ] && [ -n "$id2" ]; then
+        print_success "✓ Test passed: Different idempotency keys create different payments"
+        echo "Payment 1 ID: $id1"
+        echo "Payment 2 ID: $id2"
+    else
+        print_error "✗ Test failed: Different idempotency keys should create different payments"
+        print_error "Payment 1 ID: $id1"
+        print_error "Payment 2 ID: $id2"
+        failed_tests=$((failed_tests + 1))
+    fi
+    echo ""
+
+    # Test 10: Idempotency - No header should create new payment each time
+    print_status "Test 10: Idempotency - No header creates new payments"
+
+    # First payment without idempotency key
+    local response_no_key1=$(curl -s -k -X POST \
+        -H "Content-Type: application/json" \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":5000,"cvv":"789"}' \
+        "$API_URL/api/payments")
+
+    # Second payment without idempotency key
+    local response_no_key2=$(curl -s -k -X POST \
+        -H "Content-Type: application/json" \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":5000,"cvv":"789"}' \
+        "$API_URL/api/payments")
+
+    local id_no_key1=$(echo "$response_no_key1" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+    local id_no_key2=$(echo "$response_no_key2" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+    if [ "$id_no_key1" != "$id_no_key2" ] && [ -n "$id_no_key1" ] && [ -n "$id_no_key2" ]; then
+        print_success "✓ Test passed: Requests without idempotency key create different payments"
+        echo "Payment 1 ID: $id_no_key1"
+        echo "Payment 2 ID: $id_no_key2"
+    else
+        print_error "✗ Test failed: Requests without idempotency key should create different payments"
+        print_error "Payment 1 ID: $id_no_key1"
+        print_error "Payment 2 ID: $id_no_key2"
+        failed_tests=$((failed_tests + 1))
+    fi
+    echo ""
+
+    # Test 11: Bank simulator shutdown test
+    print_status "Test 11: Bank Simulator Shutdown - Service unavailable"
     print_status "Shutting down bank simulator..."
     docker-compose down > /dev/null 2>&1
 

@@ -13,8 +13,13 @@ The challenge calls for "not overengineering" - to me I apply [Beck Design Rules
 
 - I notice that it says not to change the simulator. I will re-evaluate if that's a hard requirement later.
 - use strings for CardNumberLastFour and CVV to preserve leading zeros and it's common convention including checkout.com's own APIs
+- I prefer a classic approach to TDD over mockist. Socialable tests are fine.
+
+## Links
+
 - Checkout.com [API reference](https://api-reference.checkout.com/#tag/Payments)
 - Checkout.com [Payment](https://www.checkout.com/docs/payments/accept-payments/accept-a-payment-using-the-payments-api)
+- [Idempotency](https://www.checkout.com/docs/developer-resources/api/idempotency)
 
 ## Comparison to real API
 
