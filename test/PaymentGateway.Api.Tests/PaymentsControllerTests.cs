@@ -22,7 +22,7 @@ public class PaymentsControllerTests
         var payment = new PostPaymentResponse
         {
             Id = Guid.NewGuid(),
-            ExpiryYear = _random.Next(2023, 2030),
+            ExpiryYear = _random.Next(2026, 2030),
             ExpiryMonth = _random.Next(1, 12),
             Amount = _random.Next(1, 10000),
             CardNumberLastFour = _random.Next(1000, 9999).ToString(),
@@ -69,7 +69,7 @@ public class PaymentsControllerTests
         {
             CardNumber = "4111111111111111",
             ExpiryMonth = 12,
-            ExpiryYear = 2025,
+            ExpiryYear = 2026,
             Currency = "GBP",
             Amount = 1000,
             Cvv = "123"
@@ -102,7 +102,7 @@ public class PaymentsControllerTests
         {
             CardNumber = "0123", // Too short e.g. accidentally sent last 4 digits
             ExpiryMonth = 12,
-            ExpiryYear = 2025,
+            ExpiryYear = 2026,
             Currency = "GBP",
             Amount = 1000,
             Cvv = "123"
@@ -120,5 +120,86 @@ public class PaymentsControllerTests
         Assert.NotNull(paymentResponse);
         Assert.Equal(PaymentStatus.Rejected, paymentResponse!.Status);
         Assert.NotEqual(Guid.Empty, paymentResponse.Id);
+    }
+
+    [Fact]
+    public async Task RejectsPaymentWithInvalidLuhnCardNumber()
+    {
+        // Arrange
+        var paymentRequest = new PostPaymentRequest
+        {
+            CardNumber = "4111111111111112", // Luhn invalid
+            ExpiryMonth = 12,
+            ExpiryYear = 2026,
+            Currency = "GBP",
+            Amount = 1000,
+            Cvv = "123"
+        };
+
+        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
+        var client = webApplicationFactory.CreateClient();
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Rejected, paymentResponse!.Status);
+    }
+
+    [Fact]
+    public async Task RejectsPaymentWithPastExpiryDate()
+    {
+        // Arrange
+        var paymentRequest = new PostPaymentRequest
+        {
+            CardNumber = "4111111111111111",
+            ExpiryMonth = 12,
+            ExpiryYear = 2020, // Past year
+            Currency = "GBP",
+            Amount = 1000,
+            Cvv = "123"
+        };
+
+        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
+        var client = webApplicationFactory.CreateClient();
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Rejected, paymentResponse!.Status);
+    }
+
+    [Fact]
+    public async Task RejectsPaymentWithUnsupportedCurrency()
+    {
+        // Arrange
+        var paymentRequest = new PostPaymentRequest
+        {
+            CardNumber = "4111111111111111",
+            ExpiryMonth = 12,
+            ExpiryYear = 2026,
+            Currency = "JPY", // Not supported
+            Amount = 1000,
+            Cvv = "123"
+        };
+
+        var webApplicationFactory = new WebApplicationFactory<PaymentsController>();
+        var client = webApplicationFactory.CreateClient();
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/Payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Rejected, paymentResponse!.Status);
     }
 }

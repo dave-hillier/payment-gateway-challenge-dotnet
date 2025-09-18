@@ -9,7 +9,7 @@ namespace PaymentGateway.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class PaymentsController(PaymentsRepository paymentsRepository) : Controller
+public class PaymentsController(PaymentsRepository paymentsRepository, CardValidationService cardValidationService) : Controller
 {
     [HttpGet("{id:guid}")]
     [Produces("application/vnd.paymentgateway.payment+json", "application/json")]
@@ -50,6 +50,28 @@ public class PaymentsController(PaymentsRepository paymentsRepository) : Control
                 ExpiryYear = request?.ExpiryYear ?? 0,
                 Currency = request?.Currency ?? string.Empty,
                 Amount = request?.Amount ?? 0
+            };
+
+            return BadRequest(rejectedResponse);
+        }
+
+        // Additional business validation using CardValidationService
+        if (!cardValidationService.IsValidCardNumber(request.CardNumber) ||
+            !cardValidationService.IsValidExpiryDate(request.ExpiryMonth, request.ExpiryYear) ||
+            !cardValidationService.IsValidCvv(request.Cvv) ||
+            !cardValidationService.IsValidCurrency(request.Currency))
+        {
+            var rejectedResponse = new PostPaymentResponse
+            {
+                Id = Guid.NewGuid(),
+                Status = PaymentGateway.Api.Models.PaymentStatus.Rejected,
+                CardNumberLastFour = request.CardNumber?.Length >= 4
+                    ? request.CardNumber.Substring(request.CardNumber.Length - 4)
+                    : "0000",
+                ExpiryMonth = request.ExpiryMonth,
+                ExpiryYear = request.ExpiryYear,
+                Currency = request.Currency,
+                Amount = request.Amount
             };
 
             return BadRequest(rejectedResponse);

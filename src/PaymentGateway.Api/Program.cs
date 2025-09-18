@@ -16,6 +16,7 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddSingleton<PaymentsRepository>();
 builder.Services.AddSingleton<IdempotencyService>();
+builder.Services.AddScoped<CardValidationService>();
 
 var app = builder.Build();
 

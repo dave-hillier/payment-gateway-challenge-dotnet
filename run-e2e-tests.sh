@@ -198,7 +198,7 @@ main() {
     # Test 1: Success scenario (card ending in odd number)
     print_status "Test 1: Success - Authorized payment"
     if ! run_test "SUCCESS" "POST" "/api/payments" \
-        '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":1000,"cvv":"123"}' \
+        '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":1000,"cvv":"123"}' \
         "200" "Card ending in 1 (odd) should be authorized"; then
         failed_tests=$((failed_tests + 1))
     fi
@@ -206,7 +206,7 @@ main() {
     # Test 2: Bank decline (card ending in even number)
     print_status "Test 2: Bank Decline - Declined payment"
     if ! run_test "DECLINE" "POST" "/api/payments" \
-        '{"cardNumber":"4111111111111112","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":1000,"cvv":"123"}' \
+        '{"cardNumber":"4000000000000002","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":1000,"cvv":"123"}' \
         "200" "Card ending in 2 (even) should be declined"; then
         failed_tests=$((failed_tests + 1))
     fi
@@ -230,7 +230,7 @@ main() {
     # Test 5: Bank failure (card ending in 0)
     print_status "Test 5: Bank Failure - Bank service error"
     if ! run_test "BANK_FAILURE" "POST" "/api/payments" \
-        '{"cardNumber":"4111111111111110","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":1000,"cvv":"123"}' \
+        '{"cardNumber":"4000000000000010","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":1000,"cvv":"123"}' \
         "502" "Card ending in 0 should cause bank failure"; then
         failed_tests=$((failed_tests + 1))
     fi
@@ -240,7 +240,7 @@ main() {
     # First create a payment to get an ID
     local payment_response=$(curl -s -k -X POST \
         -H "Content-Type: application/json" \
-        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":1500,"cvv":"456"}' \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":1500,"cvv":"456"}' \
         "$API_URL/api/payments")
 
     local payment_id=$(echo "$payment_response" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
@@ -269,7 +269,7 @@ main() {
 
     local idempotency_key_1=$(uuidgen)
     if ! run_idempotency_test "IDEMPOTENCY_SUCCESS" "$idempotency_key_1" \
-        '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":3000,"cvv":"123"}' \
+        '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":3000,"cvv":"123"}' \
         "Two requests with same idempotency key should return identical responses"; then
         failed_tests=$((failed_tests + 1))
     fi
@@ -282,14 +282,14 @@ main() {
     local response1=$(curl -s -k -X POST \
         -H "Content-Type: application/json" \
         -H "Cko-Idempotency-Key: $idempotency_key_1" \
-        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":4000,"cvv":"456"}' \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":4000,"cvv":"456"}' \
         "$API_URL/api/payments")
 
     # Second payment with different key
     local response2=$(curl -s -k -X POST \
         -H "Content-Type: application/json" \
         -H "Cko-Idempotency-Key: $idempotency_key_2" \
-        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":4000,"cvv":"456"}' \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":4000,"cvv":"456"}' \
         "$API_URL/api/payments")
 
     local id1=$(echo "$response1" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
@@ -313,13 +313,13 @@ main() {
     # First payment without idempotency key
     local response_no_key1=$(curl -s -k -X POST \
         -H "Content-Type: application/json" \
-        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":5000,"cvv":"789"}' \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":5000,"cvv":"789"}' \
         "$API_URL/api/payments")
 
     # Second payment without idempotency key
     local response_no_key2=$(curl -s -k -X POST \
         -H "Content-Type: application/json" \
-        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":5000,"cvv":"789"}' \
+        -d '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":5000,"cvv":"789"}' \
         "$API_URL/api/payments")
 
     local id_no_key1=$(echo "$response_no_key1" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
@@ -346,7 +346,7 @@ main() {
     sleep 3
 
     if ! run_test "BANK_SHUTDOWN" "POST" "/api/payments" \
-        '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2025,"currency":"USD","amount":2000,"cvv":"789"}' \
+        '{"cardNumber":"4111111111111111","expiryMonth":12,"expiryYear":2026,"currency":"USD","amount":2000,"cvv":"789"}' \
         "503" "Payment should fail when bank simulator is unavailable"; then
         failed_tests=$((failed_tests + 1))
     fi

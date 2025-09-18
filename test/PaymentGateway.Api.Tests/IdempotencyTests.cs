@@ -18,9 +18,9 @@ public class IdempotencyTests
         // Arrange
         var request = new PostPaymentRequest
         {
-            CardNumber = "2222405343248877",
+            CardNumber = "4111111111111111",
             ExpiryMonth = 4,
-            ExpiryYear = 2025,
+            ExpiryYear = 2026,
             Currency = "GBP",
             Amount = 100,
             Cvv = "123"
@@ -59,9 +59,9 @@ public class IdempotencyTests
         // Arrange
         var request = new PostPaymentRequest
         {
-            CardNumber = "2222405343248877",
+            CardNumber = "4111111111111111",
             ExpiryMonth = 4,
-            ExpiryYear = 2025,
+            ExpiryYear = 2026,
             Currency = "GBP",
             Amount = 100,
             Cvv = "123"
