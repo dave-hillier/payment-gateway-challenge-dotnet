@@ -12,3 +12,27 @@ services:
       - type: bind
         source: ./imposters
         target: /imposters
+
+  jpy_acquirer:
+    container_name: jpy_acquirer
+    image: bbyars/mountebank:2.8.1
+    ports:
+      - "2526:2525"
+      - "8081:8080"
+    command: --configfile /imposters/jpy_acquirer.ejs --allowInjection
+    volumes:
+      - type: bind
+        source: ./imposters
+        target: /imposters
+
+  eur_acquirer:
+    container_name: eur_acquirer
+    image: bbyars/mountebank:2.8.1
+    ports:
+      - "2527:2525"
+      - "8082:8080"
+    command: --configfile /imposters/eur_acquirer.ejs --allowInjection
+    volumes:
+      - type: bind
+        source: ./imposters
+        target: /imposters
