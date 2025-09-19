@@ -24,7 +24,18 @@ public class PaymentsController(PaymentsRepository paymentsRepository, CardValid
             return NotFound();
         }
 
-        return Ok(payment);
+        var response = new GetPaymentResponse
+        {
+            Id = payment.Id,
+            Status = payment.Status,
+            CardNumberLastFour = payment.CardNumberLastFour,
+            ExpiryMonth = payment.ExpiryMonth,
+            ExpiryYear = payment.ExpiryYear,
+            Currency = payment.Currency,
+            Amount = payment.Amount
+        };
+
+        return Ok(response);
     }
 
     [HttpPost]

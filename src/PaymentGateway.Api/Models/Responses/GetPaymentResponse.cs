@@ -1,10 +1,13 @@
 ﻿using PaymentGateway.Api.Enums;
+using System.Text.Json.Serialization;
 
 namespace PaymentGateway.Api.Models.Responses;
 
 public record GetPaymentResponse
 {
     public Guid Id { get; set; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public PaymentStatus Status { get; set; }
     public string CardNumberLastFour { get; set; }
     public int ExpiryMonth { get; set; }
