@@ -1,3 +1,5 @@
+using Orleans;
+
 using PaymentGateway.Api.Models.Routing;
 
 namespace PaymentGateway.Api.Grains;
@@ -22,15 +24,7 @@ public class RoutingTable
     {
         return Routes.TryGetValue(key, out var node) ? node : null;
     }
-
-    public void RemoveRouteNodeIfEmpty(string key)
-    {
-        if (Routes.TryGetValue(key, out var node) && !node.HasAcquirers())
-        {
-            Routes.Remove(key);
-        }
-    }
-
+    
     public IReadOnlyList<RouteNode> GetMatchingRoutes(string cardNumber, string currency)
     {
         return Routes.Values

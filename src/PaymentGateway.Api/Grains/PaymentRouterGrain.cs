@@ -5,19 +5,11 @@ using PaymentGateway.Api.Models.Acquirer;
 
 namespace PaymentGateway.Api.Grains;
 
-public class PaymentRouterGrain : Grain, IPaymentRouterGrain
+public class PaymentRouterGrain(
+    [PersistentState("routeRegistration", "routeStore")] IPersistentState<RoutingTable> state,
+    ILogger<PaymentRouterGrain> logger)
+    : Grain, IPaymentRouterGrain
 {
-    private readonly IPersistentState<RoutingTable> _state;
-    private readonly ILogger<PaymentRouterGrain> _logger;
-
-    public PaymentRouterGrain(
-        [PersistentState("routeRegistration", "routeStore")] IPersistentState<RoutingTable> state,
-        ILogger<PaymentRouterGrain> logger)
-    {
-        _state = state;
-        _logger = logger;
-    }
-
     public async Task<string> GetAcquirerIdAsync(string cardNumber, string currency)
     {
         var matchingRoutes = await GetRouteNodesForCardAsync(cardNumber, currency);
@@ -28,13 +20,13 @@ public class PaymentRouterGrain : Grain, IPaymentRouterGrain
             var preferredAcquirer = bestRoute.GetPreferredAcquirer();
             if (preferredAcquirer != null)
             {
-                _logger.LogInformation("Routing card {CardLastFour} ({Currency}) to acquirer {AcquirerId} via route {RouteKey}",
+                logger.LogInformation("Routing card {CardLastFour} ({Currency}) to acquirer {AcquirerId} via route {RouteKey}",
                     GetCardLastFour(cardNumber), currency, preferredAcquirer, bestRoute.ToString());
                 return preferredAcquirer;
             }
         }
 
-        _logger.LogWarning("No route found for card {CardLastFour} ({Currency}), falling back to simulator",
+        logger.LogWarning("No route found for card {CardLastFour} ({Currency}), falling back to simulator",
             GetCardLastFour(cardNumber), currency);
         return "simulator";
     }
@@ -64,12 +56,12 @@ public class PaymentRouterGrain : Grain, IPaymentRouterGrain
         if (string.IsNullOrEmpty(routeKey))
             throw new ArgumentNullException(nameof(routeKey));
 
-        var routeNode = _state.State.GetOrCreateRouteNode(routeKey);
+        var routeNode = state.State.GetOrCreateRouteNode(routeKey);
         routeNode.AddAcquirer(acquirerId, isDefault);
 
-        await _state.WriteStateAsync();
+        await state.WriteStateAsync();
 
-        _logger.LogInformation("Registered acquirer {AcquirerId} for route {RouteKey} (default: {IsDefault})",
+        logger.LogInformation("Registered acquirer {AcquirerId} for route {RouteKey} (default: {IsDefault})",
             acquirerId, routeKey, isDefault);
     }
 
@@ -78,13 +70,13 @@ public class PaymentRouterGrain : Grain, IPaymentRouterGrain
         if (string.IsNullOrEmpty(routeKey))
             throw new ArgumentNullException(nameof(routeKey));
 
-        var node = _state.State.GetRouteNode(routeKey);
+        var node = state.State.GetRouteNode(routeKey);
         return Task.FromResult(node);
     }
 
     public Task<IReadOnlyList<RouteNode>> GetAllRouteNodesAsync()
     {
-        var nodes = _state.State.Routes.Values.ToList();
+        var nodes = state.State.Routes.Values.ToList();
         return Task.FromResult<IReadOnlyList<RouteNode>>(nodes);
     }
 
@@ -96,7 +88,7 @@ public class PaymentRouterGrain : Grain, IPaymentRouterGrain
         if (string.IsNullOrWhiteSpace(currency))
             throw new ArgumentException("Currency cannot be null or whitespace", nameof(currency));
 
-        var matchingNodes = _state.State.GetMatchingRoutes(cardNumber, currency);
+        var matchingNodes = state.State.GetMatchingRoutes(cardNumber, currency);
         return Task.FromResult(matchingNodes);
     }
 
@@ -108,18 +100,18 @@ public class PaymentRouterGrain : Grain, IPaymentRouterGrain
         if (string.IsNullOrWhiteSpace(acquirerId))
             throw new ArgumentException("Acquirer ID cannot be null or whitespace", nameof(acquirerId));
 
-        var routeNode = _state.State.GetRouteNode(routeKey);
+        var routeNode = state.State.GetRouteNode(routeKey);
         if (routeNode != null && routeNode.AcquirerIds.Contains(acquirerId))
         {
             routeNode.DefaultAcquirerId = acquirerId;
-            await _state.WriteStateAsync();
+            await state.WriteStateAsync();
 
-            _logger.LogInformation("Set default acquirer {AcquirerId} for route {RouteKey}",
+            logger.LogInformation("Set default acquirer {AcquirerId} for route {RouteKey}",
                 acquirerId, routeKey);
         }
         else
         {
-            _logger.LogWarning("Cannot set default acquirer {AcquirerId} for route {RouteKey} - acquirer not registered",
+            logger.LogWarning("Cannot set default acquirer {AcquirerId} for route {RouteKey} - acquirer not registered",
                 acquirerId, routeKey);
         }
     }
@@ -129,7 +121,7 @@ public class PaymentRouterGrain : Grain, IPaymentRouterGrain
         if (string.IsNullOrWhiteSpace(acquirerId) || string.IsNullOrEmpty(routeKey))
             return Task.FromResult(false);
 
-        var routeNode = _state.State.GetRouteNode(routeKey);
+        var routeNode = state.State.GetRouteNode(routeKey);
         var isRegistered = routeNode?.AcquirerIds.Contains(acquirerId) ?? false;
         return Task.FromResult(isRegistered);
     }

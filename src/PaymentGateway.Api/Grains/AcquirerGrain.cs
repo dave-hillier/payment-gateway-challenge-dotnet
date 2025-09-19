@@ -1,47 +1,41 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+
+using Orleans;
+using Orleans.Runtime;
+
 using PaymentGateway.Api.Models.Acquirer;
 
 namespace PaymentGateway.Api.Grains;
 
-public class AcquirerGrain : Grain, IAcquirerGrain
+public class AcquirerGrain(
+    [PersistentState("acquirerState", "acquirerStore")] IPersistentState<AcquirerGrainState> state,
+    ILogger<AcquirerGrain> logger,
+    IHttpClientFactory httpClientFactory)
+    : Grain, IAcquirerGrain
 {
-    private readonly IPersistentState<AcquirerGrainState> _state;
-    private readonly ILogger<AcquirerGrain> _logger;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly JsonSerializerOptions _jsonOptions;
-
-    public AcquirerGrain(
-        [PersistentState("acquirerState", "acquirerStore")] IPersistentState<AcquirerGrainState> state,
-        ILogger<AcquirerGrain> logger,
-        IHttpClientFactory httpClientFactory)
+    private readonly JsonSerializerOptions _jsonOptions = new()
     {
-        _state = state;
-        _logger = logger;
-        _httpClientFactory = httpClientFactory;
-        _jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-        };
-    }
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
 
     public async Task<AcquirerPaymentResponse> ProcessPaymentAsync(AcquirerPaymentRequest request, CancellationToken cancellationToken = default)
     {
         var acquirerId = this.GetPrimaryKeyString();
 
         // Ensure configuration is set before processing
-        if (string.IsNullOrEmpty(_state.State.BaseUrl))
+        if (string.IsNullOrEmpty(state.State.BaseUrl))
         {
-            _logger.LogError("Acquirer {AcquirerId} is not configured - BaseUrl is empty", acquirerId);
+            logger.LogError("Acquirer {AcquirerId} is not configured - BaseUrl is empty", acquirerId);
             throw new InvalidOperationException($"Acquirer {acquirerId} is not properly configured");
         }
 
-        using var httpClient = _httpClientFactory.CreateClient("AcquirerClient");
+        using var httpClient = httpClientFactory.CreateClient("AcquirerClient");
 
         // Configure HTTP client for this acquirer
-        httpClient.BaseAddress = new Uri(_state.State.BaseUrl);
-        httpClient.Timeout = _state.State.Timeout;
+        httpClient.BaseAddress = new Uri(state.State.BaseUrl);
+        httpClient.Timeout = state.State.Timeout;
 
         var json = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -49,7 +43,7 @@ public class AcquirerGrain : Grain, IAcquirerGrain
 
         if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
         {
-            _logger.LogWarning("Acquirer {AcquirerId} service unavailable (503)", acquirerId);
+            logger.LogWarning("Acquirer {AcquirerId} service unavailable (503)", acquirerId);
             throw new HttpRequestException("Acquirer service unavailable", null, HttpStatusCode.ServiceUnavailable);
         }
 
@@ -63,11 +57,11 @@ public class AcquirerGrain : Grain, IAcquirerGrain
 
     public async Task ConfigureAsync(string baseUrl, TimeSpan timeout)
     {
-        _state.State.BaseUrl = baseUrl;
-        _state.State.Timeout = timeout;
-        await _state.WriteStateAsync();
+        state.State.BaseUrl = baseUrl;
+        state.State.Timeout = timeout;
+        await state.WriteStateAsync();
 
-        _logger.LogInformation("Updated configuration for acquirer {AcquirerId}", this.GetPrimaryKeyString());
+        logger.LogInformation("Updated configuration for acquirer {AcquirerId}", this.GetPrimaryKeyString());
     }
 
     public async Task RegisterForRouteAsync(string routeKey, bool isDefault = false)
@@ -80,7 +74,7 @@ public class AcquirerGrain : Grain, IAcquirerGrain
 
         await paymentRouterGrain.RegisterAcquirerAsync(acquirerId, routeKey, isDefault);
 
-        _logger.LogInformation("Acquirer {AcquirerId} registered for route {RouteKey} (default: {IsDefault})",
+        logger.LogInformation("Acquirer {AcquirerId} registered for route {RouteKey} (default: {IsDefault})",
             acquirerId, routeKey, isDefault);
     }
 }

@@ -1,6 +1,6 @@
 using PaymentGateway.Api.Services;
 using PaymentGateway.Api.Middleware;
-using PaymentGateway.Api.Grains;
+
 using Orleans.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);

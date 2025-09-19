@@ -2,7 +2,7 @@ namespace PaymentGateway.Api.Services;
 
 public class CardValidationService
 {
-    private static readonly HashSet<string> SupportedCurrencies = new() { "USD", "GBP", "EUR", "JPY" };
+    private static readonly HashSet<string> SupportedCurrencies = ["USD", "GBP", "EUR", "JPY"];
 
     public bool IsValidCardNumber(string cardNumber)
     {
@@ -21,7 +21,7 @@ public class CardValidationService
 
     public bool IsValidExpiryDate(int month, int year)
     {
-        if (month < 1 || month > 12)
+        if (month is < 1 or > 12)
         {
             return false;
         }
@@ -39,7 +39,7 @@ public class CardValidationService
             return false;
         }
 
-        return cvv.Length >= 3 && cvv.Length <= 4 && cvv.All(char.IsDigit);
+        return cvv.Length is >= 3 and <= 4 && cvv.All(char.IsDigit);
     }
 
     public bool IsValidCurrency(string currency)

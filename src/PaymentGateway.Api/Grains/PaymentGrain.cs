@@ -7,22 +7,12 @@ using PaymentGateway.Api.Services;
 
 namespace PaymentGateway.Api.Grains;
 
-public class PaymentGrain : Grain, IPaymentGrain
+public class PaymentGrain(
+    [PersistentState("paymentState", "paymentStore")] IPersistentState<PaymentState> state,
+    ILogger<PaymentGrain> logger,
+    CardValidationService cardValidationService)
+    : Grain, IPaymentGrain
 {
-    private readonly IPersistentState<PaymentState> _state;
-    private readonly ILogger<PaymentGrain> _logger;
-    private readonly CardValidationService _cardValidationService;
-
-    public PaymentGrain(
-        [PersistentState("paymentState", "paymentStore")] IPersistentState<PaymentState> state,
-        ILogger<PaymentGrain> logger,
-        CardValidationService cardValidationService)
-    {
-        _state = state;
-        _logger = logger;
-        _cardValidationService = cardValidationService;
-    }
-
     public async Task<PostPaymentResponse> ProcessPaymentAsync(
         string cardNumber,
         int expiryMonth,
@@ -32,39 +22,39 @@ public class PaymentGrain : Grain, IPaymentGrain
         string cvv)
     {
         // If payment already exists, return existing result (idempotency)
-        if (_state.State.Id != Guid.Empty)
+        if (state.State.Id != Guid.Empty)
         {
             return CreateResponse();
         }
 
         // Initialize payment state
         var paymentId = Guid.Parse(this.GetPrimaryKeyString());
-        _state.State.Id = paymentId;
-        _state.State.CardNumber = cardNumber;
-        _state.State.CardNumberLastFour = cardNumber.Length >= 4
+        state.State.Id = paymentId;
+        state.State.CardNumber = cardNumber;
+        state.State.CardNumberLastFour = cardNumber.Length >= 4
             ? cardNumber[^4..]
             : "0000";
-        _state.State.ExpiryMonth = expiryMonth;
-        _state.State.ExpiryYear = expiryYear;
-        _state.State.Currency = currency;
-        _state.State.Amount = amount;
-        _state.State.CVV = cvv;
-        _state.State.CreatedAt = DateTime.UtcNow;
+        state.State.ExpiryMonth = expiryMonth;
+        state.State.ExpiryYear = expiryYear;
+        state.State.Currency = currency;
+        state.State.Amount = amount;
+        state.State.CVV = cvv;
+        state.State.CreatedAt = DateTime.UtcNow;
 
         // Validate payment request
-        if (!_cardValidationService.IsValidCardNumber(cardNumber) ||
-            !_cardValidationService.IsValidExpiryDate(expiryMonth, expiryYear) ||
-            !_cardValidationService.IsValidCvv(cvv) ||
-            !_cardValidationService.IsValidCurrency(currency))
+        if (!cardValidationService.IsValidCardNumber(cardNumber) ||
+            !cardValidationService.IsValidExpiryDate(expiryMonth, expiryYear) ||
+            !cardValidationService.IsValidCvv(cvv) ||
+            !cardValidationService.IsValidCurrency(currency))
         {
-            _state.State.Status = PaymentStatus.Rejected;
-            await _state.WriteStateAsync();
-            _logger.LogInformation("Payment {PaymentId} rejected due to validation failure", paymentId);
+            state.State.Status = PaymentStatus.Rejected;
+            await state.WriteStateAsync();
+            logger.LogInformation("Payment {PaymentId} rejected due to validation failure", paymentId);
             return CreateResponse();
         }
 
-        _state.State.Status = PaymentStatus.Validated;
-        await _state.WriteStateAsync();
+        state.State.Status = PaymentStatus.Validated;
+        await state.WriteStateAsync();
 
         // Start processing
         await ProcessWithBankAsync();
@@ -74,20 +64,20 @@ public class PaymentGrain : Grain, IPaymentGrain
 
     public Task<GetPaymentResponse?> GetPaymentAsync()
     {
-        if (_state.State.Id == Guid.Empty)
+        if (state.State.Id == Guid.Empty)
         {
             return Task.FromResult<GetPaymentResponse?>(null);
         }
 
         var response = new GetPaymentResponse
         {
-            Id = _state.State.Id,
-            Status = _state.State.Status,
-            CardNumberLastFour = _state.State.CardNumberLastFour,
-            ExpiryMonth = _state.State.ExpiryMonth,
-            ExpiryYear = _state.State.ExpiryYear,
-            Currency = _state.State.Currency,
-            Amount = _state.State.Amount
+            Id = state.State.Id,
+            Status = state.State.Status,
+            CardNumberLastFour = state.State.CardNumberLastFour,
+            ExpiryMonth = state.State.ExpiryMonth,
+            ExpiryYear = state.State.ExpiryYear,
+            Currency = state.State.Currency,
+            Amount = state.State.Amount
         };
 
         return Task.FromResult<GetPaymentResponse?>(response);
@@ -97,53 +87,53 @@ public class PaymentGrain : Grain, IPaymentGrain
     {
         try
         {
-            _state.State.Status = PaymentStatus.Processing;
-            await _state.WriteStateAsync();
+            state.State.Status = PaymentStatus.Processing;
+            await state.WriteStateAsync();
 
-            _logger.LogInformation("Processing payment {PaymentId} with bank", _state.State.Id);
+            logger.LogInformation("Processing payment {PaymentId} with bank", state.State.Id);
 
             var paymentRouterGrain = GrainFactory.GetGrain<IPaymentRouterGrain>("global");
             AcquirerPaymentResponse bankResponse = await paymentRouterGrain.ProcessPaymentAsync(
-                _state.State.CardNumber,
-                _state.State.ExpiryMonth,
-                _state.State.ExpiryYear,
-                _state.State.Currency,
-                _state.State.Amount,
-                _state.State.CVV);
+                state.State.CardNumber,
+                state.State.ExpiryMonth,
+                state.State.ExpiryYear,
+                state.State.Currency,
+                state.State.Amount,
+                state.State.CVV);
 
-            _state.State.Status = bankResponse.Authorized switch
+            state.State.Status = bankResponse.Authorized switch
             {
                 true => PaymentStatus.Authorized,
                 false => PaymentStatus.Declined
             };
-            _state.State.ProcessedAt = DateTime.UtcNow;
-            _state.State.BankResponseCode = bankResponse.AuthorizationCode ?? "NO_CODE";
+            state.State.ProcessedAt = DateTime.UtcNow;
+            state.State.BankResponseCode = bankResponse.AuthorizationCode ?? "NO_CODE";
 
-            await _state.WriteStateAsync();
+            await state.WriteStateAsync();
 
-            _logger.LogInformation("Payment {PaymentId} processed with status {Status}",
-                _state.State.Id, _state.State.Status);
+            logger.LogInformation("Payment {PaymentId} processed with status {Status}",
+                state.State.Id, state.State.Status);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
         {
-            _logger.LogError(ex, "All acquirers unavailable for payment {PaymentId}", _state.State.Id);
+            logger.LogError(ex, "All acquirers unavailable for payment {PaymentId}", state.State.Id);
 
-            _state.State.Status = PaymentStatus.Failed;
-            _state.State.ProcessedAt = DateTime.UtcNow;
-            _state.State.BankResponseCode = "SERVICE_UNAVAILABLE";
-            await _state.WriteStateAsync();
+            state.State.Status = PaymentStatus.Failed;
+            state.State.ProcessedAt = DateTime.UtcNow;
+            state.State.BankResponseCode = "SERVICE_UNAVAILABLE";
+            await state.WriteStateAsync();
 
             // Re-throw to signal service unavailable to controller
             throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing payment {PaymentId}", _state.State.Id);
+            logger.LogError(ex, "Error processing payment {PaymentId}", state.State.Id);
 
-            _state.State.Status = PaymentStatus.Failed;
-            _state.State.ProcessedAt = DateTime.UtcNow;
-            _state.State.BankResponseCode = "PROCESSING_ERROR";
-            await _state.WriteStateAsync();
+            state.State.Status = PaymentStatus.Failed;
+            state.State.ProcessedAt = DateTime.UtcNow;
+            state.State.BankResponseCode = "PROCESSING_ERROR";
+            await state.WriteStateAsync();
 
             throw;
         }
@@ -153,13 +143,13 @@ public class PaymentGrain : Grain, IPaymentGrain
     {
         return new PostPaymentResponse
         {
-            Id = _state.State.Id,
-            Status = _state.State.Status,
-            CardNumberLastFour = _state.State.CardNumberLastFour,
-            ExpiryMonth = _state.State.ExpiryMonth,
-            ExpiryYear = _state.State.ExpiryYear,
-            Currency = _state.State.Currency,
-            Amount = _state.State.Amount
+            Id = state.State.Id,
+            Status = state.State.Status,
+            CardNumberLastFour = state.State.CardNumberLastFour,
+            ExpiryMonth = state.State.ExpiryMonth,
+            ExpiryYear = state.State.ExpiryYear,
+            Currency = state.State.Currency,
+            Amount = state.State.Amount
         };
     }
 

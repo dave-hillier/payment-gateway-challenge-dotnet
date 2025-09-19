@@ -1,5 +1,4 @@
 using PaymentGateway.Api.Models.Routing;
-using Xunit;
 
 namespace PaymentGateway.Api.Tests;
 
