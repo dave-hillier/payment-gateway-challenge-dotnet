@@ -12,18 +12,15 @@ public class PaymentGrain : Grain, IPaymentGrain
     private readonly IPersistentState<PaymentState> _state;
     private readonly ILogger<PaymentGrain> _logger;
     private readonly CardValidationService _cardValidationService;
-    private readonly AcquirerRouter _acquirerRouter;
 
     public PaymentGrain(
         [PersistentState("paymentState", "paymentStore")] IPersistentState<PaymentState> state,
         ILogger<PaymentGrain> logger,
-        CardValidationService cardValidationService,
-        AcquirerRouter acquirerRouter)
+        CardValidationService cardValidationService)
     {
         _state = state;
         _logger = logger;
         _cardValidationService = cardValidationService;
-        _acquirerRouter = acquirerRouter;
     }
 
     public async Task<PostPaymentResponse> ProcessPaymentAsync(
@@ -105,24 +102,14 @@ public class PaymentGrain : Grain, IPaymentGrain
 
             _logger.LogInformation("Processing payment {PaymentId} with bank", _state.State.Id);
 
-            // Get acquirer grain using grain-based routing
-            var acquirerGrain = _acquirerRouter.GetAcquirerGrain(_state.State.CardNumber);
-
-            // Configure the acquirer grain with centralized configuration
-            var acquirerId = acquirerGrain.GetPrimaryKeyString();
-            var (baseUrl, timeout) = _acquirerRouter.GetAcquirerConfiguration(acquirerId);
-            await acquirerGrain.ConfigureAsync(baseUrl, timeout);
-
-            var acquirerRequest = new AcquirerPaymentRequest
-            {
-                CardNumber = _state.State.CardNumber,
-                ExpiryDate = $"{_state.State.ExpiryMonth:D2}/{_state.State.ExpiryYear}",
-                Currency = _state.State.Currency,
-                Amount = _state.State.Amount,
-                Cvv = _state.State.CVV
-            };
-
-            var bankResponse = await acquirerGrain.ProcessPaymentAsync(acquirerRequest, CancellationToken.None);
+            var paymentRouterGrain = GrainFactory.GetGrain<IPaymentRouterGrain>("global");
+            AcquirerPaymentResponse bankResponse = await paymentRouterGrain.ProcessPaymentAsync(
+                _state.State.CardNumber,
+                _state.State.ExpiryMonth,
+                _state.State.ExpiryYear,
+                _state.State.Currency,
+                _state.State.Amount,
+                _state.State.CVV);
 
             _state.State.Status = bankResponse.Authorized switch
             {
@@ -161,7 +148,6 @@ public class PaymentGrain : Grain, IPaymentGrain
             throw;
         }
     }
-
 
     private PostPaymentResponse CreateResponse()
     {

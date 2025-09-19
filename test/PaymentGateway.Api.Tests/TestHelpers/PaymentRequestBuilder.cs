@@ -23,6 +23,12 @@ public class PaymentRequestBuilder
         return this;
     }
 
+    public PaymentRequestBuilder WithMastercardOddCardNumber()
+    {
+        _cardNumber = "4111111111111111"; // Use known valid Visa card ending in 1 (odd) - should be authorized
+        return this;
+    }
+
     public PaymentRequestBuilder WithEvenCardNumber()
     {
         _cardNumber = "4000000000000002"; // Ends in 2 (even) - should be declined

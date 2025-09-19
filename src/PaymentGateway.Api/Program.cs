@@ -23,11 +23,12 @@ builder.Host.UseOrleans(silo =>
         .UseLocalhostClustering()
         .AddMemoryGrainStorage("paymentStore")
         .AddMemoryGrainStorage("acquirerStore")
+        .AddMemoryGrainStorage("routeStore")
         .ConfigureLogging(logging => logging.AddConsole());
 });
 
 builder.Services.AddTransient<CardValidationService>();
-builder.Services.AddTransient<AcquirerRouter>();
+builder.Services.AddHostedService<RouteInitializationService>();
 
 // Configure HttpClientFactory for acquirer grains
 builder.Services.AddHttpClient("AcquirerClient", client =>

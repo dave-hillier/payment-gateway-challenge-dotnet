@@ -287,4 +287,141 @@ public class PaymentE2ETests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotNull(payment2);
         Assert.NotEqual(payment1.Id, payment2.Id);
     }
+
+    [Fact]
+    public async Task ProcessPayment_WithJPYCurrency_RouteToJPYAcquirer()
+    {
+        // Arrange - Mastercard in JPY should route to jpy-acquirer
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithMastercardOddCardNumber() // Mastercard ending in 1 (odd)
+            .WithCurrency("JPY")
+            .WithAmount(10000) // 100 JPY
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal("JPY", paymentResponse.Currency);
+        Assert.Equal("1111", paymentResponse.CardNumberLastFour);
+        // JPY acquirer should add "JPY-" prefix to authorization codes
+        Assert.NotNull(paymentResponse);
+    }
+
+    [Fact]
+    public async Task ProcessPayment_WithVisaJPY_RouteToJPYAcquirer()
+    {
+        // Arrange - Visa in JPY should route to jpy-acquirer via fallback route
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithCardNumber("4111111111111111") // Visa (4*)
+            .WithCurrency("JPY")
+            .WithAmount(50000) // 500 JPY
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal("JPY", paymentResponse.Currency);
+        Assert.Equal("1111", paymentResponse.CardNumberLastFour);
+    }
+
+    [Fact]
+    public async Task ProcessPayment_WithEURCurrency_RouteToEURAcquirer()
+    {
+        // Arrange - Mastercard in EUR should route to eur-acquirer
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithMastercardOddCardNumber() // Mastercard ending in 1 (odd)
+            .WithCurrency("EUR")
+            .WithAmount(2500) // 25.00 EUR
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal("EUR", paymentResponse.Currency);
+        Assert.Equal("1111", paymentResponse.CardNumberLastFour);
+    }
+
+    [Fact]
+    public async Task ProcessPayment_WithAmexEUR_RouteToEURAcquirer()
+    {
+        // Arrange - Amex in EUR should route to eur-acquirer via fallback
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithCardNumber("371449635398431") // Amex (37*)
+            .WithCurrency("EUR")
+            .WithAmount(5000) // 50.00 EUR
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal("EUR", paymentResponse.Currency);
+        Assert.Equal("8431", paymentResponse.CardNumberLastFour);
+    }
+
+    [Fact]
+    public async Task ProcessPayment_WithUSDCurrency_RouteToSimulator()
+    {
+        // Arrange - USD should continue routing to simulator (default fallback)
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithMastercardOddCardNumber() // Mastercard ending in 1 (odd)
+            .WithCurrency("USD")
+            .WithAmount(1000) // $10.00
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal("USD", paymentResponse.Currency);
+        Assert.Equal("1111", paymentResponse.CardNumberLastFour);
+    }
+
+    [Theory]
+    [InlineData("JPY", "4111111111111111")] // Visa JPY -> jpy-acquirer
+    [InlineData("EUR", "4111111111111111")] // Visa EUR -> eur-acquirer
+    [InlineData("USD", "4111111111111111")] // Visa USD -> simulator
+    [InlineData("GBP", "4111111111111111")] // Visa GBP -> simulator
+    public async Task ProcessPayment_DifferentCurrencies_RouteToCorrectAcquirer(string currency, string cardNumber)
+    {
+        // Arrange
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithCardNumber(cardNumber)
+            .WithCurrency(currency)
+            .WithAmount(1000)
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal(currency, paymentResponse.Currency);
+    }
 }

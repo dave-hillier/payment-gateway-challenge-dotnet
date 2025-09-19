@@ -2,7 +2,7 @@ namespace PaymentGateway.Api.Services;
 
 public class CardValidationService
 {
-    private static readonly HashSet<string> SupportedCurrencies = new() { "USD", "GBP", "EUR" };
+    private static readonly HashSet<string> SupportedCurrencies = new() { "USD", "GBP", "EUR", "JPY" };
 
     public bool IsValidCardNumber(string cardNumber)
     {

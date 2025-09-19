@@ -66,11 +66,13 @@ public class CardValidationServiceTests
     [InlineData("USD", true)]
     [InlineData("GBP", true)]
     [InlineData("EUR", true)]
+    [InlineData("JPY", true)]  // Now supported!
     [InlineData("usd", true)]  // Case insensitive
     [InlineData("gbp", true)]  // Case insensitive
     [InlineData("eur", true)]  // Case insensitive
-    [InlineData("JPY", false)] // Not supported
+    [InlineData("jpy", true)]  // Case insensitive JPY
     [InlineData("CAD", false)] // Not supported
+    [InlineData("AUD", false)] // Not supported
     [InlineData("", false)]    // Empty
     [InlineData(null, false)]  // Null
     public void IsValidCurrency_ShouldValidateCorrectly(string currency, bool expected)

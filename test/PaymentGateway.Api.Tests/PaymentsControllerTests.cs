@@ -199,7 +199,7 @@ public class PaymentsControllerTests
             CardNumber = "4111111111111111",
             ExpiryMonth = 12,
             ExpiryYear = 2026,
-            Currency = "JPY", // Not supported
+            Currency = "CAD", // Not supported
             Amount = 1000,
             Cvv = "123"
         };

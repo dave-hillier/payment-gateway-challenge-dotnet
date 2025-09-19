@@ -1,8 +1,6 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using Orleans;
-using Orleans.Runtime;
 using PaymentGateway.Api.Models.Acquirer;
 
 namespace PaymentGateway.Api.Grains;
@@ -51,8 +49,7 @@ public class AcquirerGrain : Grain, IAcquirerGrain
 
         if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
         {
-            _logger.LogWarning("Acquirer {AcquirerId} service unavailable (503) for card ending in {CardLastFour}",
-                acquirerId, GetCardLastFour(request.CardNumber));
+            _logger.LogWarning("Acquirer {AcquirerId} service unavailable (503)", acquirerId);
             throw new HttpRequestException("Acquirer service unavailable", null, HttpStatusCode.ServiceUnavailable);
         }
 
@@ -73,8 +70,17 @@ public class AcquirerGrain : Grain, IAcquirerGrain
         _logger.LogInformation("Updated configuration for acquirer {AcquirerId}", this.GetPrimaryKeyString());
     }
 
-    private static string GetCardLastFour(string cardNumber)
+    public async Task RegisterForRouteAsync(string routeKey, bool isDefault = false)
     {
-        return cardNumber.Length >= 4 ? cardNumber[^4..] : "****";
+        if (string.IsNullOrEmpty(routeKey))
+            throw new ArgumentNullException(nameof(routeKey));
+
+        var acquirerId = this.GetPrimaryKeyString();
+        var paymentRouterGrain = GrainFactory.GetGrain<IPaymentRouterGrain>("global");
+
+        await paymentRouterGrain.RegisterAcquirerAsync(acquirerId, routeKey, isDefault);
+
+        _logger.LogInformation("Acquirer {AcquirerId} registered for route {RouteKey} (default: {IsDefault})",
+            acquirerId, routeKey, isDefault);
     }
 }
