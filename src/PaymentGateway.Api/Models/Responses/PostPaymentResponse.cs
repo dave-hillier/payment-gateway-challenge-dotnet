@@ -1,4 +1,6 @@
-﻿using PaymentGateway.Api.Enums;
+﻿using System.Text.Json.Serialization;
+
+using PaymentGateway.Api.Enums;
 
 namespace PaymentGateway.Api.Models.Responses;
 
@@ -6,6 +8,7 @@ namespace PaymentGateway.Api.Models.Responses;
 public record PostPaymentResponse
 {
     [Id(0)] public Guid Id { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     [Id(1)] public PaymentStatus Status { get; set; }
     [Id(2)] public string CardNumberLastFour { get; set; } = string.Empty;
     [Id(3)] public int ExpiryMonth { get; set; }
