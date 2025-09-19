@@ -10,7 +10,6 @@ using PaymentGateway.Api.Models.Acquirer;
 namespace PaymentGateway.Api.Grains;
 
 public class AcquirerGrain(
-    [PersistentState("acquirerState", "acquirerStore")] IPersistentState<AcquirerGrainState> state,
     ILogger<AcquirerGrain> logger,
     IHttpClientFactory httpClientFactory)
     : Grain, IAcquirerGrain
@@ -24,18 +23,10 @@ public class AcquirerGrain(
     {
         var acquirerId = this.GetPrimaryKeyString();
 
-        // Ensure configuration is set before processing
-        if (string.IsNullOrEmpty(state.State.BaseUrl))
-        {
-            logger.LogError("Acquirer {AcquirerId} is not configured - BaseUrl is empty", acquirerId);
-            throw new InvalidOperationException($"Acquirer {acquirerId} is not properly configured");
-        }
+        // HttpClient is pre-configured in Program.cs with base address and timeout
 
-        using var httpClient = httpClientFactory.CreateClient("AcquirerClient");
-
-        // Configure HTTP client for this acquirer
-        httpClient.BaseAddress = new Uri(state.State.BaseUrl);
-        httpClient.Timeout = state.State.Timeout;
+        var httpClientKey = $"Acquirer_{acquirerId}";
+        using var httpClient = httpClientFactory.CreateClient(httpClientKey);
 
         var json = JsonSerializer.Serialize(request, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -55,14 +46,6 @@ public class AcquirerGrain(
         return acquirerResponse ?? new AcquirerPaymentResponse { Authorized = false };
     }
 
-    public async Task ConfigureAsync(string baseUrl, TimeSpan timeout)
-    {
-        state.State.BaseUrl = baseUrl;
-        state.State.Timeout = timeout;
-        await state.WriteStateAsync();
-
-        logger.LogInformation("Updated configuration for acquirer {AcquirerId}", this.GetPrimaryKeyString());
-    }
 
     public async Task RegisterForRouteAsync(string routeKey, bool isDefault = false)
     {

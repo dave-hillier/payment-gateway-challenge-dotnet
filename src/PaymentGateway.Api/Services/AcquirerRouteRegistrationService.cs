@@ -4,20 +4,14 @@ using PaymentGateway.Api.Grains;
 
 namespace PaymentGateway.Api.Services;
 
-public class RouteInitializationService(IClusterClient clusterClient) : IHostedService
+public class AcquirerRouteRegistrationService(IClusterClient clusterClient) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // Get acquirer grains
         var simulatorGrain = clusterClient.GetGrain<IAcquirerGrain>("simulator");
         var jpyAcquirerGrain = clusterClient.GetGrain<IAcquirerGrain>("jpy-acquirer");
         var eurAcquirerGrain = clusterClient.GetGrain<IAcquirerGrain>("eur-acquirer");
-
-        // Configure acquirers
-        await simulatorGrain.ConfigureAsync("http://localhost:8080", TimeSpan.FromSeconds(30));
-        await jpyAcquirerGrain.ConfigureAsync("http://localhost:8081", TimeSpan.FromSeconds(30));
-        await eurAcquirerGrain.ConfigureAsync("http://localhost:8082", TimeSpan.FromSeconds(30));
-
+   
         // Register routing for JPY - demonstrating the new routing system
         await jpyAcquirerGrain.RegisterForRouteAsync("5*/JPY", true);  // Mastercard JPY -> jpy-acquirer
         await jpyAcquirerGrain.RegisterForRouteAsync("4*/JPY", false); // Visa JPY -> jpy-acquirer (not default)
