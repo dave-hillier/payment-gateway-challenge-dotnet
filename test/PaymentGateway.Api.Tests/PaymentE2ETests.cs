@@ -402,7 +402,6 @@ public class PaymentE2ETests : IClassFixture<WebApplicationFactory<Program>>
 
     [Theory]
     [InlineData("JPY", "4111111111111111")] // Visa JPY -> jpy-acquirer
-    [InlineData("EUR", "4111111111111111")] // Visa EUR -> eur-acquirer
     [InlineData("USD", "4111111111111111")] // Visa USD -> simulator
     [InlineData("GBP", "4111111111111111")] // Visa GBP -> simulator
     public async Task ProcessPayment_DifferentCurrencies_RouteToCorrectAcquirer(string currency, string cardNumber)
@@ -423,5 +422,49 @@ public class PaymentE2ETests : IClassFixture<WebApplicationFactory<Program>>
         Assert.NotNull(paymentResponse);
         Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
         Assert.Equal(currency, paymentResponse.Currency);
+    }
+
+    [Fact]
+    public async Task ProcessPayment_MastercardEUR_RoutesToEurAcquirer()
+    {
+        // Arrange - Use a Mastercard ending in odd digit (1) for authorization
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithCardNumber("5431111111111111") // Mastercard ending in 1 (valid Luhn)
+            .WithCurrency("EUR")
+            .WithAmount(1000)
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal("EUR", paymentResponse.Currency);
+        Assert.Equal("1111", paymentResponse.CardNumberLastFour);
+    }
+
+    [Fact]
+    public async Task ProcessPayment_VisaEUR_RoutesToSimulator()
+    {
+        // Arrange - Visa EUR should fall back to simulator via */*
+        var paymentRequest = PaymentRequestBuilder.Create()
+            .WithCardNumber("4111111111111111") // Visa ending in 1 for authorization
+            .WithCurrency("EUR")
+            .WithAmount(1000)
+            .Build();
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/payments", paymentRequest);
+        var paymentResponse = await response.Content.ReadFromJsonAsync<PostPaymentResponse>();
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(paymentResponse);
+        Assert.Equal(PaymentStatus.Authorized, paymentResponse.Status);
+        Assert.Equal("EUR", paymentResponse.Currency);
+        Assert.Equal("1111", paymentResponse.CardNumberLastFour);
     }
 }
