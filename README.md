@@ -1,21 +1,19 @@
-# Instructions for candidates
+# Payment Gateway Challenge
 
-This is the .NET version of the Payment Gateway challenge. If you haven't already read this [README.md](https://github.com/cko-recruitment/) on the details of this exercise, please do so now. 
+## Quick Start
 
-## Template structure
-```
-src/
-    PaymentGateway.Api - a skeleton ASP.NET Core Web API
-test/
-    PaymentGateway.Api.Tests - an empty xUnit test project
-imposters/ - contains the bank simulator configuration. Don't change this
+### Build and Run
 
-.editorconfig - don't change this. It ensures a consistent set of rules for submissions when reformatting code
-docker-compose.yml - configures the bank simulator
-PaymentGateway.sln
-```
+- Build the solution: `dotnet build`
+- Run the API: `dotnet run --project src/PaymentGateway.Api`
+- Start bank simulator: `docker-compose up`
 
-Feel free to change the structure of the solution, use a different test library etc.
+### Testing
+
+- Run unit tests only (default): `dotnet test --filter "Category!=E2E"`
+- Run E2E tests (requires services to be running): `dotnet test --filter "Category=E2E"`
+- Run all tests: `dotnet test`
+- Run full E2E test suite with simulator orchestration: `./test-e2e.sh`
 
 ## Implementation Overview
 
