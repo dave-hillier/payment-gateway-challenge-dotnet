@@ -56,4 +56,4 @@ For transactions, I used SQLite in memory rather than just the vanilla in memory
 
 The EF Core Approach had become quite complex. I decided to experiement with an alternative approach using Orlean's actor framework. It resulted in ~1000 fewer lines of code than the EF approach whilst maintaining functional parity with the other approaches.
 
-Idempotency comes naturally with the use of grains and adding multiple acquirers becomes trivial.
+Idempotency comes naturally with the use of grains and I've extended this branch to work with multiple acquirers selected by currency and card. 
